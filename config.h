@@ -52,7 +52,7 @@ constexpr uint16_t DEFAULT_MAX_WHEEL_ANGLE_DEG = 1800;
 constexpr uint32_t LONG_PRESS_MS         = 5000;    // Hold > 5s for Flash cal
 
 // Flash calibration version
-constexpr uint8_t FLASH_DATA_VERSION    = 5;
+constexpr uint8_t FLASH_DATA_VERSION    = 6;
 
 // Overpower Detection
 constexpr int32_t DYNAMIC_DAMPING_FACTOR = 50;      // Tuning parameter for overpower opposition
