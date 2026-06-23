@@ -173,6 +173,9 @@ void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& ped
     state.led_status.force(SystemStatus::MotorSweepsActive);
     led.update();
     
+    // Read initial state to populate raw angle before capturing center
+    block_read_sensor(context);
+
     int32_t raw_center = context.parser.get_absolute_raw() & 0x0FFF;
     
     // Save to shared state and parser
@@ -182,7 +185,7 @@ void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& ped
     CalibrationState& cal_state = state.cal_state;
     cal_state.valid = false;
     
-    // Read initial state
+    // Read again to re-initialize parser with the new center
     block_read_sensor(context);
     
     // 1. Find Zero PWM
