@@ -83,11 +83,11 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle, bool is_recove
     if (dt_us > 0) {
         // Determine shortest path for wrapped values
         delta = static_cast<int32_t>(raw_angle) - static_cast<int32_t>(last_raw_angle_);
-        if (delta > 2048) {
-            delta -= 4096;
+        if (delta > ENCODER_COUNTS_PER_REV / 2) {
+            delta -= ENCODER_COUNTS_PER_REV;
             wraps = -1;
-        } else if (delta < -2048) {
-            delta += 4096;
+        } else if (delta < -(ENCODER_COUNTS_PER_REV / 2)) {
+            delta += ENCODER_COUNTS_PER_REV;
             wraps = 1;
         }
 
@@ -117,12 +117,12 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle, bool is_recove
             // Extrapolate what the raw angle should have been, accounting for potential wraps
             int32_t total_raw = static_cast<int32_t>(last_raw_angle_) + delta;
             wraps = 0;
-            while (total_raw >= 4096) {
-                total_raw -= 4096;
+            while (total_raw >= ENCODER_COUNTS_PER_REV) {
+                total_raw -= ENCODER_COUNTS_PER_REV;
                 wraps++;
             }
             while (total_raw < 0) {
-                total_raw += 4096;
+                total_raw += ENCODER_COUNTS_PER_REV;
                 wraps--;
             }
             
@@ -148,7 +148,7 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle, bool is_recove
     }
     
     turn_count_ += wraps;
-    accumulated_position_ = (turn_count_ * 4096) + static_cast<int32_t>(raw_angle) - center_offset_;
+    accumulated_position_ = (turn_count_ * ENCODER_COUNTS_PER_REV) + static_cast<int32_t>(raw_angle) - center_offset_;
     
     last_raw_angle_ = raw_angle;
     last_time_us_ = now;

@@ -13,15 +13,11 @@ public:
 
     int32_t get_position() const { return accumulated_position_; }
     int32_t get_velocity() const { return filtered_velocity_cps_; }
-    int32_t get_absolute_raw() const { return (turn_count_ * 4096) + last_raw_angle_; }
+    int32_t get_absolute_raw() const { return (turn_count_ * ENCODER_COUNTS_PER_REV) + last_raw_angle_; }
     uint8_t get_error_flags() const { return error_flags_; }
 
-    // Set the center offset (from flash calibration)
-    void set_center(int32_t center) { center_offset_ = center; }
-
-    // Apply a new center offset live (from debug serial 'cs center' command).
-    // Resets position tracking so the next read re-establishes position from the new center.
-    void recenter(int32_t center) { center_offset_ = center; first_read_ = true; }
+    // Set the center offset
+    void set_center(int32_t center) { center_offset_ = center; first_read_ = true; }
 
 private:
     // Position tracking

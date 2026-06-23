@@ -42,7 +42,7 @@ constexpr uint8_t PIN_LED             = 22;
 constexpr uint16_t ENCODER_COUNTS_PER_REV  = 4096;
 constexpr uint16_t WHEEL_COUNTS_PER_REV    = ENCODER_COUNTS_PER_REV * 2;  // 8192
 
-// Physical wheel range default: 1080° total → ±540° from center
+// Physical wheel range default: 1800° total → ±900° from center
 constexpr uint16_t DEFAULT_MAX_WHEEL_ANGLE_DEG = 1800;
 
 // =========================================================================
@@ -216,3 +216,4 @@ enum class SystemStatus : uint8_t {
     RapidFlash       = 254  // Special mode: rapid continuous flashing, clearable immediately
 };
 
+constexpr uint8_t ERROR_LOG_SIZE = 16;

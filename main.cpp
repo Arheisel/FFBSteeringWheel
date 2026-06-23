@@ -27,13 +27,15 @@
 #include "debug_serial.h"
 #include "calibration.h"
 
-// Instantiate the global shared state
-static SharedState g_shared_state;
+namespace {
+    // Instantiate the global shared state
+    SharedState g_shared_state;
 
-static ButtonReader g_buttons;
-static PedalReader  g_pedals;
-static LEDController g_led;
-static FlashStorage g_flash;
+    ButtonReader g_buttons;
+    PedalReader  g_pedals;
+    LEDController g_led;
+    FlashStorage g_flash;
+}
 
 int main() {
     board_init();
@@ -90,7 +92,6 @@ int main() {
         g_shared_state.cal_state.friction_fade_force.store(DEFAULT_FRICTION_FADE_FORCE);
 
         g_shared_state.led_status.set(SystemStatus::FlashCalMissing);
-        debug_log_error(SystemStatus::FlashCalMissing);
     }
     
     // Preload true button state
@@ -150,7 +151,7 @@ int main() {
                 tight_loop_contents();
             }
         }
-        else if (num_pressed == 1) {
+        else {
             run_calibration(g_shared_state, g_buttons, g_pedals, g_led, g_flash);
             // run_calibration handles reboot, so this never returns
         }

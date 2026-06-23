@@ -14,8 +14,7 @@
 #include "hardware/gpio.h"
 #include "pico/time.h"
 
-void MotorControl::init(const CalibrationState* cal_state) {
-    cal_state_ = cal_state;
+void MotorControl::init() {
     // Configure PWM pins
     gpio_set_function(PIN_PWM_LPWM, GPIO_FUNC_PWM);
     gpio_set_function(PIN_PWM_RPWM, GPIO_FUNC_PWM);
@@ -45,12 +44,15 @@ void MotorControl::init(const CalibrationState* cal_state) {
     current_direction_ = Direction::OFF;
 }
 
-void MotorControl::set_calibration_zero(uint16_t cw_zero, uint16_t ccw_zero) {
-    uint16_t forward_max_pwm = cal_state_ ? cal_state_->forward_max_pwm.load(std::memory_order_relaxed) : DEFAULT_FORWARD_MAX_PWM;
-    cw_zero_pwm_ = cw_zero;
-    cw_active_range = forward_max_pwm - cw_zero;
-    ccw_zero_pwm_ = ccw_zero;
-    ccw_active_range = forward_max_pwm - ccw_zero;
+void MotorControl::apply_calibration(const CalibrationState& cal_state) {
+    forward_max_pwm_ = cal_state.forward_max_pwm.load(std::memory_order_relaxed);
+    cw_zero_pwm_ = cal_state.cw_zero_pwm.load(std::memory_order_relaxed);
+    cw_active_range_ = forward_max_pwm_ - cw_zero_pwm_;
+    ccw_zero_pwm_ = cal_state.ccw_zero_pwm.load(std::memory_order_relaxed);
+    ccw_active_range_ = forward_max_pwm_ - ccw_zero_pwm_;
+    force_scale_percent_ = cal_state.force_scale_percent.load(std::memory_order_relaxed);
+    friction_fade_force_ = cal_state.friction_fade_force.load(std::memory_order_relaxed);
+    dynamic_force_ = 10000 - friction_fade_force_;
 }
 
 void MotorControl::set_force(int16_t force, int32_t velocity) {
@@ -62,13 +64,9 @@ void MotorControl::set_force(int16_t force, int32_t velocity) {
     Direction dir = (force > 0) ? Direction::CW : Direction::CCW;
     uint16_t abs_force = (force > 0) ? force : -force;
 
-    uint16_t force_scale_percent = cal_state_ ? cal_state_->force_scale_percent.load(std::memory_order_relaxed) : DEFAULT_FORCE_SCALE_PERCENT;
-    uint16_t friction_fade_force = cal_state_ ? cal_state_->friction_fade_force.load(std::memory_order_relaxed) : DEFAULT_FRICTION_FADE_FORCE;
-    uint16_t dynamic_force = 10000 - friction_fade_force;
-
-    if (force_scale_percent != 100){
+    if (force_scale_percent_ != 100){
         // Artificial "punch" boost to compress dynamic range and make weak forces feel stronger
-         abs_force = static_cast<uint16_t>((static_cast<uint32_t>(abs_force) * force_scale_percent) / 100);
+         abs_force = static_cast<uint16_t>((static_cast<uint32_t>(abs_force) * force_scale_percent_) / 100);
     }
 
     if (abs_force > 10000) abs_force = 10000;
@@ -84,14 +82,14 @@ void MotorControl::set_force(int16_t force, int32_t velocity) {
 
     if (safe_max_pwm <= zero_pwm){
         // Backdriving force scaling
-        pwm = (abs_force * safe_max_pwm) / friction_fade_force;
-    } else if (abs_force < friction_fade_force){
+        pwm = (abs_force * safe_max_pwm) / friction_fade_force_;
+    } else if (abs_force < friction_fade_force_){
         // Static friction compensation
-        pwm = (abs_force * zero_pwm) / friction_fade_force;
+        pwm = (abs_force * zero_pwm) / friction_fade_force_;
     } else {
         // Dynamic force scaling, starting the scale at friction_fade_force
-        uint16_t active_range = (dir == Direction::CW) ? cw_active_range : ccw_active_range;
-        pwm = zero_pwm + (((abs_force - friction_fade_force) * active_range) / dynamic_force);
+        uint16_t active_range = (dir == Direction::CW) ? cw_active_range_ : ccw_active_range_;
+        pwm = zero_pwm + (((abs_force - friction_fade_force_) * active_range) / dynamic_force_);
     }
 
     // Ensure we never go above max safe PWM
@@ -108,18 +106,17 @@ uint16_t MotorControl::get_safe_max_pwm(Direction dir, int32_t velocity) {
     bool is_stalled = (velocity == 0);
     int32_t abs_velocity = (velocity >= 0) ? velocity : -velocity;
     
-    uint16_t forward_max_pwm = cal_state_ ? cal_state_->forward_max_pwm.load(std::memory_order_relaxed) : DEFAULT_FORWARD_MAX_PWM;
-    uint16_t max_allowed_pwm = forward_max_pwm;
+    uint16_t max_allowed_pwm = forward_max_pwm_;
     
     if (is_stalled) {
         max_allowed_pwm = STALL_PWM_MAX;
     } else if (is_forward) {
         if (abs_velocity < FORWARD_VELOCITY_THRESHOLD_CPS) {
             // Linearly increase from STALL_PWM_MAX to forward_max_pwm
-            int16_t range = forward_max_pwm - STALL_PWM_MAX;
+            int16_t range = forward_max_pwm_ - STALL_PWM_MAX;
             max_allowed_pwm = STALL_PWM_MAX + static_cast<uint16_t>((abs_velocity * range) / FORWARD_VELOCITY_THRESHOLD_CPS);
         } else {
-            max_allowed_pwm = forward_max_pwm;
+            max_allowed_pwm = forward_max_pwm_;
         }
 
         // --- Hardware Safety: Max Velocity Fading (Protection Envelope) ---

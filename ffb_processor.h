@@ -6,18 +6,20 @@
 
 class FFBProcessor {
 public:
-    void init(const CalibrationState* luts) { cal_luts_ = luts; }
+    void apply_calibration(const CalibrationState& cal_state);
 
     // Calculate the combined force output from all active effects.
     // position: wheel position in raw counts from center
     // velocity: raw counts per sec (signed)
     // effects: snapshot of current effect state (caller holds spinlock)
-    int16_t calculate(int32_t position, int32_t velocity,
-                      EffectState& effects, int32_t max_half_angle_counts);
+    int16_t calculate(int32_t position, int32_t velocity, EffectState& effects);
 
 private:
-    const CalibrationState* cal_luts_ = nullptr;
-
+    const std::atomic<uint32_t> (*cal_lut_cw_)[CAL_FORCE_LEVEL_COUNT] = nullptr;
+    const std::atomic<uint32_t> (*cal_lut_ccw_)[CAL_FORCE_LEVEL_COUNT] = nullptr;
+    uint32_t max_half_angle_counts_ = DEFAULT_MAX_WHEEL_ANGLE_DEG * WHEEL_COUNTS_PER_REV / 360;
+    uint16_t system_damper_strength_ = 0;
+    
     // Effect calculators — all return force in -10000..+10000 range
     int32_t calc_constant_force(const EffectSlot& e);
     int32_t calc_ramp_force(const EffectSlot& e, uint32_t elapsed_ms);

@@ -14,8 +14,8 @@ struct FlashCalibrationData {
     // Motor Calibration LUTs
     uint16_t cw_zero_pwm;
     uint16_t ccw_zero_pwm;
-    int32_t  cw_speed[CAL_FORCE_LEVEL_COUNT];
-    int32_t  ccw_speed[CAL_FORCE_LEVEL_COUNT];
+    uint32_t  cw_speed[CAL_FORCE_LEVEL_COUNT];
+    uint32_t  ccw_speed[CAL_FORCE_LEVEL_COUNT];
     
     uint16_t  wheel_angle_deg;
     uint16_t  system_damper_strength;

@@ -12,10 +12,9 @@ public:
         BRAKE = 3
     };
 
-    void init(const CalibrationState* cal_state);
+    void init();
 
-    // Set minimum PWM needed to overcome static friction (from calibration)
-    void set_calibration_zero(uint16_t cw_val, uint16_t ccw_val);
+    void apply_calibration(const CalibrationState& cal_state);
 
     // Set the target PWM and direction.
     // Handles dead-time, friction compensation, and stall protection.
@@ -35,11 +34,14 @@ public:
     uint16_t get_safe_max_pwm(Direction dir, int32_t velocity);
 
 private:
+    uint16_t forward_max_pwm_ = DEFAULT_FORWARD_MAX_PWM;
     uint16_t cw_zero_pwm_ = 0;
-    uint16_t cw_active_range = 0;
+    uint16_t cw_active_range_ = 0;
     uint16_t ccw_zero_pwm_ = 0;
-    uint16_t ccw_active_range = 0;
-    const CalibrationState* cal_state_ = nullptr;
+    uint16_t ccw_active_range_ = 0;
+    uint16_t force_scale_percent_ = DEFAULT_FORCE_SCALE_PERCENT;
+    uint16_t friction_fade_force_ = DEFAULT_FRICTION_FADE_FORCE;
+    uint16_t dynamic_force_ = 10000 - friction_fade_force_;
     Direction current_direction_ = Direction::OFF;
 
     void apply_pwm(uint16_t pwm, Direction dir);

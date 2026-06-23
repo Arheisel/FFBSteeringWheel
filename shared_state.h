@@ -86,8 +86,8 @@ struct EffectState {
 struct CalibrationState {
     // Speed LUT: expected maximum raw velocity at each force level
     // Index corresponds to CAL_FORCE_LEVELS[]
-    std::atomic<int32_t>  cw_speed[CAL_FORCE_LEVEL_COUNT];
-    std::atomic<int32_t>  ccw_speed[CAL_FORCE_LEVEL_COUNT];
+    std::atomic<uint32_t>  cw_speed[CAL_FORCE_LEVEL_COUNT];
+    std::atomic<uint32_t>  ccw_speed[CAL_FORCE_LEVEL_COUNT];
 
     // Minimum PWM to overcome static friction (independently per direction)
     std::atomic<uint16_t> cw_zero_pwm{0};
@@ -95,13 +95,13 @@ struct CalibrationState {
 
     std::atomic<bool>     valid{false};
 
-    std::atomic<int16_t> center_offset{0};
-    std::atomic<uint32_t> max_half_angle_counts{12288};
-    std::atomic<uint16_t> wheel_angle_deg{1080};
+    std::atomic<int32_t> center_offset{0};
+    std::atomic<uint16_t> wheel_angle_deg{DEFAULT_MAX_WHEEL_ANGLE_DEG};
+    std::atomic<uint32_t> max_half_angle_counts{DEFAULT_MAX_WHEEL_ANGLE_DEG * WHEEL_COUNTS_PER_REV / 360};
     std::atomic<uint16_t> system_damper_strength{0};
-    std::atomic<uint16_t> forward_max_pwm{0};
-    std::atomic<uint16_t> force_scale_percent{100};
-    std::atomic<uint16_t> friction_fade_force{150};
+    std::atomic<uint16_t> forward_max_pwm{DEFAULT_FORWARD_MAX_PWM};
+    std::atomic<uint16_t> force_scale_percent{DEFAULT_FORCE_SCALE_PERCENT};
+    std::atomic<uint16_t> friction_fade_force{DEFAULT_FRICTION_FADE_FORCE};
 };
 
 // =========================================================================
@@ -197,6 +197,6 @@ struct SharedState {
     // Debug serial: one-shot AGC register read request
     std::atomic<bool>    request_agc_read{false};
 
-    // Debug serial: one-shot request for Core 1 to re-apply center_offset to the parser
-    std::atomic<bool>    recenter_requested{false};
+    // Debug serial: one-shot request for Core 1 to re-apply calibration values
+    std::atomic<bool>    calibration_reload{false};
 };

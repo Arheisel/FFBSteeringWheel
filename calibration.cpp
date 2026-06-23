@@ -13,205 +13,202 @@
 #include "as5600_parser.h"
 #include "hardware/watchdog.h"
 
-// Helper to do a blocking I2C read during calibration
-// Returns false if the read times out or the sensor reports an error.
-static bool block_read_sensor(I2CDMA& i2c, AS5600Parser& parser) {
-    i2c.start_read();
-    // Wait for DMA completion with timeout (10ms — well above the ~0.3ms I2C transfer)
-    uint64_t deadline = time_us_64() + 10000;
-    while (!i2c.handle_isr()) {
-        if (time_us_64() > deadline) {
-            return false;  // Timed out — AS5600 not responding
+namespace {
+    struct SystemContext {
+        // Instantiate hardware for calibration locally on the stack
+        I2CDMA i2c;
+        AS5600Parser parser;
+        MotorControl motor;
+
+        LEDController& led;
+        LEDState& led_state;
+
+        SystemContext(LEDController& led, LEDState& led_state) : led(led), led_state(led_state) {}
+    };
+
+    // Helper to do a blocking I2C read during calibration
+    // Returns false if the read times out or the sensor reports an error.
+    bool block_read_sensor(SystemContext& context, uint8_t retries = 0) {
+        context.i2c.start_read();
+        // Wait for DMA completion with timeout (10ms — well above the ~0.3ms I2C transfer)
+        uint64_t deadline = time_us_64() + 5000;
+        while (!context.i2c.handle_isr()) {
+            if (time_us_64() > deadline) {
+                if (retries < 5) {
+                    context.i2c.reset_bus();
+                    return block_read_sensor(context, retries + 1);
+                } else {
+                    context.led_state.set(SystemStatus::I2CWatchdogFired);
+                    while (true) {
+                        context.led.sleep_ms(10);
+                    }
+                }
+            }
+            tight_loop_contents();
         }
-        tight_loop_contents();
+        
+        const uint8_t* raw = context.i2c.get_data();
+        uint8_t status = raw[0];
+        uint16_t angle = (static_cast<uint16_t>(raw[1]) << 8) | raw[2];
+        return context.parser.update(status, angle);
     }
-    
-    const uint8_t* raw = i2c.get_data();
-    uint8_t status = raw[0];
-    uint16_t angle = (static_cast<uint16_t>(raw[1]) << 8) | raw[2];
-    return parser.update(status, angle);
-}
 
-// Find minimum PWM to overcome static friction
-static uint16_t find_zero_pwm(MotorControl::Direction dir, MotorControl& motor, I2CDMA& i2c, AS5600Parser& parser, LEDController& led) {
-    uint16_t test_pwm = PWM_WRAP / 10; //start at 10% PWM
-    
-    // Ensure we are stopped
-    motor.brake();
-    led.sleep_ms(200);
-
-    block_read_sensor(i2c, parser);
-    int32_t start_pos = parser.get_position();
-
-    while (test_pwm < STALL_PWM_MAX) {
-        motor.set_pwm(test_pwm, dir, 0);
+    // Find minimum PWM to overcome static friction
+    uint16_t find_zero_pwm(MotorControl::Direction dir, SystemContext& context) {
+        uint16_t test_pwm = PWM_WRAP / 10; //start at 10% PWM
         
-        // Wait briefly for movement
-        led.sleep_ms(50);
-        
-        block_read_sensor(i2c, parser);
-        int32_t pos = parser.get_position();
-        
-        int32_t delta = pos - start_pos;
-        if (delta < 0) delta = -delta;
+        // Ensure we are stopped
+        context.motor.brake();
+        context.led.sleep_ms(200);
 
-        int32_t vel = parser.get_velocity();
-        if (vel < 0) vel = -vel;
+        block_read_sensor(context);
+        int32_t start_pos = context.parser.get_position();
 
-        // If we moved, static friction is broken
-        if (vel > 0) {
-            // Now prove it can hold said movement
-            if (delta > CAL_ZERO_MIN_SWEEP_COUNTS) break;
-            else continue;
-        } else {
-            //if it stops we reset the position and start over
-            start_pos = pos;
+        while (test_pwm < STALL_PWM_MAX) {
+            context.motor.set_pwm(test_pwm, dir, 0);
+            
+            // Wait briefly for movement
+            context.led.sleep_ms(50);
+            
+            block_read_sensor(context);
+            int32_t pos = context.parser.get_position();
+            
+            int32_t delta = pos - start_pos;
+            if (delta < 0) delta = -delta;
+
+            int32_t vel = context.parser.get_velocity();
+            if (vel < 0) vel = -vel;
+
+            // If we moved, static friction is broken
+            if (vel > 0) {
+                // Now prove it can hold said movement
+                if (delta > CAL_ZERO_MIN_SWEEP_COUNTS) break;
+                else continue;
+            } else {
+                //if it stops we reset the position and start over
+                start_pos = pos;
+            }
+
+            test_pwm += 10;
         }
+        
+        context.motor.brake();
+        // Wait for wheel to settle
+        uint64_t settle_start = time_us_64();
+        while (time_us_64() - settle_start < 1000000) {
+            block_read_sensor(context);
+            if (context.parser.get_velocity() == 0) break;
+            context.led.sleep_ms(10);
+        }
+        return test_pwm;
+    }
 
-        test_pwm += 10;
-    }
-    
-    motor.brake();
-    // Wait for wheel to settle
-    uint64_t settle_start = time_us_64();
-    while (time_us_64() - settle_start < 1000000) {
-        block_read_sensor(i2c, parser);
-        if (parser.get_velocity() == 0) break;
-        led.update();
-        sleep_ms(10);
-    }
-    return test_pwm;
-}
+    // Sweep at a constant force and find maximum stable speed
+    uint32_t measure_max_speed(int32_t force, SystemContext& context) {
+        context.motor.set_force(force, 0);
+        
+        bool is_cw = force > 0;
+        
+        int32_t max_vel = 0;
+        uint32_t samples = 0;
+        
+        // Sweep for up to 500ms or until we travel MIN_SWEEP_COUNTS
+        int32_t start_pos = context.parser.get_position();
+        uint64_t start_time = time_us_64();
+        
+        while (true) {
+            if (time_us_64() - start_time > 5000000) break; // 5s timeout
 
-// Sweep at a constant force and find maximum stable speed
-static int32_t measure_max_speed(int32_t force, MotorControl& motor, I2CDMA& i2c, AS5600Parser& parser, LEDController& led) {
-    motor.set_force(force, 0);
-    
-    bool is_cw = force > 0;
-    
-    int32_t max_vel = 0;
-    uint32_t samples = 0;
-    
-    // Sweep for up to 500ms or until we travel MIN_SWEEP_COUNTS
-    int32_t start_pos = parser.get_position();
-    uint64_t start_time = time_us_64();
-    
-    while (true) {
-        if (time_us_64() - start_time > 5000000) break; // 5s timeout
+            context.led.sleep_ms(2); // ~500Hz sampling
+            if (!block_read_sensor(context)) continue;
+            
+            int32_t vel = context.parser.get_velocity();
+            int32_t pos = context.parser.get_position();
+            
+            // Update the motor target so the stall governor releases its clamp as we speed up
+            context.motor.set_force(force, vel);
+            
+            // Track absolute maximum velocity
+            if (is_cw && vel > max_vel) max_vel = vel;
+            if (!is_cw && vel < max_vel) max_vel = vel; // Note: max_vel will be negative
+            
+            samples++;
+            
+            // Stop conditions
+            int32_t distance = pos - start_pos;
+            if (!is_cw) distance = -distance;
+            
+            if (distance > CAL_FORCE_MIN_SWEEP_COUNTS) break; // Travelled enough distance
+        }
+        
+        context.motor.brake();
+        // Wait for wheel to settle
+        uint64_t settle_start = time_us_64();
+        while (time_us_64() - settle_start < 2000000) {
+            block_read_sensor(context);
+            if (context.parser.get_velocity() == 0) break;
+            context.led.sleep_ms(10);
+        }
+        
+        // Convert to absolute value for LUTs
+        return static_cast<uint32_t>((max_vel >= 0) ? max_vel : -max_vel);
+    }
 
-        led.update();
-        sleep_ms(2); // ~500Hz sampling
-        if (!block_read_sensor(i2c, parser)) continue;
-        
-        int32_t vel = parser.get_velocity();
-        int32_t pos = parser.get_position();
-        
-        // Update the motor target so the stall governor releases its clamp as we speed up
-        motor.set_force(force, vel);
-        
-        // Track absolute maximum velocity
-        if (is_cw && vel > max_vel) max_vel = vel;
-        if (!is_cw && vel < max_vel) max_vel = vel; // Note: max_vel will be negative
-        
-        samples++;
-        
-        // Stop conditions
-        int32_t distance = pos - start_pos;
-        if (!is_cw) distance = -distance;
-        
-        if (distance > CAL_FORCE_MIN_SWEEP_COUNTS) break; // Travelled enough distance
-    }
-    
-    motor.brake();
-    // Wait for wheel to settle
-    uint64_t settle_start = time_us_64();
-    while (time_us_64() - settle_start < 2000000) {
-        block_read_sensor(i2c, parser);
-        if (parser.get_velocity() == 0) break;
-        led.update();
-        sleep_ms(10);
-    }
-    
-    // Convert to absolute value for LUTs
-    return (max_vel >= 0) ? max_vel : -max_vel;
 }
 
 void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& pedals, LEDController& led, FlashStorage& flash) {
 
-    // Instantiate hardware for calibration locally on the stack
-    I2CDMA i2c;
-    AS5600Parser parser;
-    MotorControl motor;
+    SystemContext context(led, state.led_status);
 
-    if (!i2c.init()) {
+    if (!context.i2c.init()) {
         state.cal_state.valid = false;
         state.led_status.set(SystemStatus::EncoderConfWriteFailed);
         while (true) {
             led.sleep_ms(10);
         }
     }
-    parser.init();
-    motor.init(&state.cal_state);
+    context.parser.init();
+    context.motor.init();
 
     state.led_status.force(SystemStatus::MotorSweepsActive);
     led.update();
     
-    // 1. Grab absolute raw center
-    // Do a blocking read to get the raw angle safely
-    bool initial_read_ok = false;
-    for (int retry = 0; retry < 5; retry++) {
-        if (block_read_sensor(i2c, parser)) {
-            initial_read_ok = true;
-            break;
-        }
-        sleep_ms(5);
-    }
-    
-    if (!initial_read_ok) {
-        state.cal_state.valid = false;
-        // If sensor is dead, we can't continue safely
-        state.led_status.set(SystemStatus::FlashWriteFailed);
-        while (true) {
-            led.update();
-            sleep_ms(1);
-        }
-    }
-    
-    int32_t raw_center = parser.get_absolute_raw() & 0x0FFF;
+    int32_t raw_center = context.parser.get_absolute_raw() & 0x0FFF;
     
     // Save to shared state and parser
     state.cal_state.center_offset.store(raw_center);
-    parser.init();
-    parser.set_center(raw_center);
+    context.parser.set_center(raw_center);
 
-    CalibrationState& luts = state.cal_state;
-    luts.valid = false;
+    CalibrationState& cal_state = state.cal_state;
+    cal_state.valid = false;
     
     // Read initial state
-    block_read_sensor(i2c, parser);
+    block_read_sensor(context);
     
     // 1. Find Zero PWM
-    uint16_t cw_zero = find_zero_pwm(MotorControl::Direction::CW, motor, i2c, parser, led);
-    uint16_t ccw_zero = find_zero_pwm(MotorControl::Direction::CCW, motor, i2c, parser, led);
-    
+    uint16_t cw_zero = find_zero_pwm(MotorControl::Direction::CW, context);
+    uint16_t ccw_zero = find_zero_pwm(MotorControl::Direction::CCW, context);
+    ccw_zero = (ccw_zero + find_zero_pwm(MotorControl::Direction::CCW, context)) / 2;
+    cw_zero = (cw_zero + find_zero_pwm(MotorControl::Direction::CW, context)) / 2;
+        
+    cal_state.cw_zero_pwm.store(cw_zero);
+    cal_state.ccw_zero_pwm.store(ccw_zero);
+
     // Apply friction compensation immediately so the speed sweeps are accurate
-    motor.set_calibration_zero(cw_zero, ccw_zero);
-    
-    luts.cw_zero_pwm.store(cw_zero);
-    luts.ccw_zero_pwm.store(ccw_zero);
+    context.motor.apply_calibration(cal_state);
     
     // 2. Measure speeds at different force levels
     for (uint8_t i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
         int32_t force = CAL_FORCE_LEVELS[i];
         
-        luts.cw_speed[i].store(measure_max_speed(force, motor, i2c, parser, led));
-        luts.ccw_speed[i].store(measure_max_speed(-force, motor, i2c, parser, led));
+        cal_state.cw_speed[i].store(measure_max_speed(force, context));
+        cal_state.ccw_speed[i].store(measure_max_speed(-force, context));
     }
     
     // Verify LUTs are somewhat sane (speed should monotonically increase)
     // If not, we could apply a smoothing pass here, but for now we just accept it.
     
-    luts.valid.store(true);
+    cal_state.valid.store(true);
     state.led_status.clear(SystemStatus::MotorSweepsActive);
 
     // 3. Pedal Calibration Phase
@@ -293,8 +290,7 @@ void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& ped
         state.led_status.set(SystemStatus::FlashWriteFailed);
         // Do not reboot; just stay here and flash the error code
         while (true) {
-            led.update();
-            sleep_ms(10);
+            led.sleep_ms(10);
         }
     }
 

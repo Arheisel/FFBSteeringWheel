@@ -14,18 +14,20 @@
 // Values scaled to 0..10000
 // =========================================================================
 
-static const int16_t sin_lut[91] = {
-        0,   175,   349,   523,   698,   872,  1045,  1219,  1392,  1564,
-     1736,  1908,  2079,  2250,  2419,  2588,  2756,  2924,  3090,  3256,
-     3420,  3584,  3746,  3907,  4067,  4226,  4384,  4540,  4695,  4848,
-     5000,  5150,  5299,  5446,  5592,  5736,  5878,  6018,  6157,  6293,
-     6428,  6561,  6691,  6820,  6947,  7071,  7193,  7314,  7431,  7547,
-     7660,  7771,  7880,  7986,  8090,  8192,  8290,  8387,  8480,  8572,
-     8660,  8746,  8829,  8910,  8988,  9063,  9135,  9205,  9272,  9336,
-     9397,  9455,  9511,  9563,  9613,  9659,  9703,  9744,  9781,  9816,
-     9848,  9877,  9903,  9925,  9945,  9962,  9976,  9986,  9994,  9998,
-    10000
-};
+namespace {
+    const int16_t sin_lut[91] = {
+            0,   175,   349,   523,   698,   872,  1045,  1219,  1392,  1564,
+        1736,  1908,  2079,  2250,  2419,  2588,  2756,  2924,  3090,  3256,
+        3420,  3584,  3746,  3907,  4067,  4226,  4384,  4540,  4695,  4848,
+        5000,  5150,  5299,  5446,  5592,  5736,  5878,  6018,  6157,  6293,
+        6428,  6561,  6691,  6820,  6947,  7071,  7193,  7314,  7431,  7547,
+        7660,  7771,  7880,  7986,  8090,  8192,  8290,  8387,  8480,  8572,
+        8660,  8746,  8829,  8910,  8988,  9063,  9135,  9205,  9272,  9336,
+        9397,  9455,  9511,  9563,  9613,  9659,  9703,  9744,  9781,  9816,
+        9848,  9877,  9903,  9925,  9945,  9962,  9976,  9986,  9994,  9998,
+        10000
+    };
+}
 
 int32_t FFBProcessor::int_sin(uint32_t angle_centideg) {
     // Normalize to 0..35999
@@ -48,20 +50,30 @@ int32_t FFBProcessor::int_sin(uint32_t angle_centideg) {
 }
 
 // =========================================================================
+// Calibration
+// =========================================================================
+
+void FFBProcessor::apply_calibration(const CalibrationState& cal_state) {
+    cal_lut_cw_ = &cal_state.cw_speed;
+    cal_lut_ccw_ = &cal_state.ccw_speed;
+    max_half_angle_counts_ = cal_state.max_half_angle_counts.load(std::memory_order_relaxed);
+    system_damper_strength_ = cal_state.system_damper_strength.load(std::memory_order_relaxed);
+}
+
+// =========================================================================
 // Main calculation
 // =========================================================================
 
-int16_t FFBProcessor::calculate(int32_t position, int32_t velocity,
-                                  EffectState& effects, int32_t max_half_angle_counts) {
+int16_t FFBProcessor::calculate(int32_t position, int32_t velocity, EffectState& effects) {
     int32_t total_force = 0;
 
     // ---- Electronic End-Stop (Early Exit) ----
     // If wheel is beyond physical limit, apply a proportional reverse spring
     // and skip ALL other effect processing.
-    if (position > max_half_angle_counts || position < -max_half_angle_counts) {
+    if (position > max_half_angle_counts_ || position < -max_half_angle_counts_) {
         int32_t overshoot = (position > 0)
-            ? (position - max_half_angle_counts)
-            : (position + max_half_angle_counts);
+            ? (position - max_half_angle_counts_)
+            : (position + max_half_angle_counts_);
 
         // Proportional spring: force = -overshoot scaled to 10000 range
         // Scaling by 256 makes it extremely aggressive (hits a brick wall within ~11 degrees)
@@ -85,7 +97,7 @@ int16_t FFBProcessor::calculate(int32_t position, int32_t velocity,
     // ---- Accumulate forces from all active effects ----
     uint64_t now = time_us_64();
 
-    int32_t scaled_pos = (position * 10000) / max_half_angle_counts;
+    int32_t scaled_pos = (position * 10000) / max_half_angle_counts_;
     int32_t scaled_vel = (velocity * 10000) / MAX_SAFE_VELOCITY_CPS;
     if (scaled_vel > 10000) scaled_vel = 10000;
     else if (scaled_vel < -10000) scaled_vel = -10000;
@@ -168,12 +180,11 @@ int16_t FFBProcessor::calculate(int32_t position, int32_t velocity,
     total_force = -(total_force * effects.device_gain) / 255;
 
     // ---- Firmware-Controlled Damper ----
-    int32_t hw_damper_str = cal_luts_ ? cal_luts_->system_damper_strength.load(std::memory_order_relaxed) : 0;
-    if (hw_damper_str > 0 && velocity != 0) {
+    if (system_damper_strength_ > 0 && velocity != 0) {
         EffectSlot hw_e;
         hw_e.params.effectType = 9;
-        hw_e.condition[0].positiveCoefficient = -hw_damper_str;
-        hw_e.condition[0].negativeCoefficient = -hw_damper_str;
+        hw_e.condition[0].positiveCoefficient = -system_damper_strength_;
+        hw_e.condition[0].negativeCoefficient = -system_damper_strength_;
         hw_e.condition[0].positiveSaturation = 10000;
         hw_e.condition[0].negativeSaturation = 10000;
         hw_e.condition[0].deadBand = 0;
@@ -357,12 +368,13 @@ int32_t FFBProcessor::apply_envelope(const EffectSlot& e, int32_t force,
 }
 
 int32_t FFBProcessor::lookup_expected_speed(int32_t force) const {
-    if (!cal_luts_ || !cal_luts_->valid.load(std::memory_order_relaxed)) return 0;
 
     bool is_cw = force > 0;
-    int32_t abs_force = is_cw ? force : -force;
-    const std::atomic<int32_t>* lut = is_cw ? cal_luts_->cw_speed : cal_luts_->ccw_speed;
+    auto* lut = is_cw ? *cal_lut_cw_ : *cal_lut_ccw_;
+    if (!lut) return 0;
 
+    int32_t abs_force = is_cw ? force : -force;
+    
     // Find the two bracketing force levels and interpolate
     for (uint8_t i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
         if (abs_force <= CAL_FORCE_LEVELS[i]) {
@@ -389,12 +401,13 @@ int32_t FFBProcessor::lookup_expected_speed(int32_t force) const {
 }
 
 int32_t FFBProcessor::lookup_required_force(int32_t velocity) const {
-    if (!cal_luts_ || !cal_luts_->valid.load(std::memory_order_relaxed)) return 0;
     if (velocity == 0) return 0;
 
     bool is_cw = velocity > 0;
+    auto* lut = is_cw ? *cal_lut_cw_ : *cal_lut_ccw_;
+    if (!lut) return 0;
+
     int32_t abs_vel = is_cw ? velocity : -velocity;
-    const std::atomic<int32_t>* lut = is_cw ? cal_luts_->cw_speed : cal_luts_->ccw_speed;
 
     // Find the two bracketing speed levels and interpolate the required force
     for (uint8_t i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
