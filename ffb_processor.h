@@ -17,7 +17,7 @@ public:
 private:
     const std::atomic<uint32_t> (*cal_lut_cw_)[CAL_FORCE_LEVEL_COUNT] = nullptr;
     const std::atomic<uint32_t> (*cal_lut_ccw_)[CAL_FORCE_LEVEL_COUNT] = nullptr;
-    uint32_t max_half_angle_counts_ = DEFAULT_MAX_WHEEL_ANGLE_DEG * WHEEL_COUNTS_PER_REV / 360;
+    int32_t max_half_angle_counts_ = DEFAULT_MAX_WHEEL_ANGLE_DEG * WHEEL_COUNTS_PER_REV / 360;
     uint16_t system_damper_strength_ = 0;
     
     // Effect calculators — all return force in -10000..+10000 range
