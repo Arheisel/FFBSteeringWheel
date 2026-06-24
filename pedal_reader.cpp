@@ -18,20 +18,11 @@ void PedalReader::init() {
     adc_gpio_init(PIN_ADC_VBUS);   // GP28 → ADC2
 }
 
-void PedalReader::set_calibration(uint16_t accel_min, uint16_t accel_max,
-                                  uint16_t brake_min, uint16_t brake_max) {
-    accel_min_ = accel_min;
-    accel_max_ = accel_max;
-    brake_min_ = brake_min;
-    brake_max_ = brake_max;
-}
-
-void PedalReader::get_calibration(uint16_t& accel_min, uint16_t& accel_max,
-                                  uint16_t& brake_min, uint16_t& brake_max) const {
-    accel_min = accel_min_;
-    accel_max = accel_max_;
-    brake_min = brake_min_;
-    brake_max = brake_max_;
+void PedalReader::apply_calibration(const CalibrationState& state) {
+    accel_min_ = state.accel_min.load();
+    accel_max_ = state.accel_max.load();
+    brake_min_ = state.brake_min.load();
+    brake_max_ = state.brake_max.load();
 }
 
 void PedalReader::read_raw_compensated(uint16_t &accel_comp, uint16_t &brake_comp) {

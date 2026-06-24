@@ -166,8 +166,10 @@ namespace {
         strcpy(p, "\r\n");
         cdc_print(buf);
 
-        uint16_t amin, amax, bmin, bmax;
-        g_pedals->get_calibration(amin, amax, bmin, bmax);
+        uint16_t amin = g_state->cal_state.accel_min.load();
+        uint16_t amax = g_state->cal_state.accel_max.load();
+        uint16_t bmin = g_state->cal_state.brake_min.load();
+        uint16_t bmax = g_state->cal_state.brake_max.load();
 
         p = buf; strcpy(p, "Accel: "); p += 7;
         p = uint_to_str(amin, p); *p++ = '-';
@@ -218,24 +220,10 @@ namespace {
         if (!g_state || !g_pedals || !g_flash) return;
 
         cdc_print("Saving to flash...\r\n");
-        FlashCalibrationData data;
-        data.center_position = g_state->cal_state.center_offset.load();
-        data.wheel_angle_deg = g_state->cal_state.wheel_angle_deg.load();
-        data.system_damper_strength = g_state->cal_state.system_damper_strength.load();
-        data.forward_max_pwm = g_state->cal_state.forward_max_pwm.load();
-        data.force_scale_percent = g_state->cal_state.force_scale_percent.load();
-        data.friction_fade_force = g_state->cal_state.friction_fade_force.load();
-        g_pedals->get_calibration(data.accel_min, data.accel_max, data.brake_min, data.brake_max);
-        data.cw_zero_pwm = g_state->cal_state.cw_zero_pwm.load();
-        data.ccw_zero_pwm = g_state->cal_state.ccw_zero_pwm.load();
-        for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
-            data.cw_speed[i] = g_state->cal_state.cw_speed[i].load();
-            data.ccw_speed[i] = g_state->cal_state.ccw_speed[i].load();
-        }
 
         // Core 1 is spinning, but we still pass core1_running=true so flash_safe_execute 
         // puts Core 1 into a lockout state cleanly before pausing Core 0 interrupts.
-        bool ok = g_flash->save(data, true);
+        bool ok = g_flash->save(g_state->cal_state, true);
 
         cdc_print(ok ? "Save OK\r\n" : "Save FAILED\r\n");
     }
@@ -455,60 +443,82 @@ namespace {
             }
         } else {
             int32_t val = atoi(argv[2]);
-            if (strcmp(var, "cwz") == 0) g_state->cal_state.cw_zero_pwm.store(static_cast<uint16_t>(val));
-            else if (strcmp(var, "ccz") == 0) g_state->cal_state.ccw_zero_pwm.store(static_cast<uint16_t>(val));
-            else if (strcmp(var, "center") == 0) {
-                g_state->cal_state.center_offset.store(val);
-            } else if (strcmp(var, "angle") == 0) {
-                if (val < 180) {
-                    cdc_print("ERR: angle must be >= 180 degrees\r\n");
-                    return;
-                }
-                g_state->cal_state.wheel_angle_deg.store(val);
-                int32_t half_deg = val / 2;
-                int32_t max_half_angle_counts = (half_deg * WHEEL_COUNTS_PER_REV) / 360;
-                g_state->cal_state.max_half_angle_counts.store(max_half_angle_counts);
-            } else if (strcmp(var, "damper") == 0) {
-                if (val < 0 || val > 10000) {
-                    cdc_print("ERR: damper must be 0 to 10000\r\n");
-                    return;
-                }
-                g_state->cal_state.system_damper_strength.store(val);
-            } else if (strcmp(var, "maxpwm") == 0) {
-                if (val < 0 || val > PWM_WRAP) {
-                    cdc_print("ERR: maxpwm out of range\r\n");
-                    return;
-                }
-                g_state->cal_state.forward_max_pwm.store(val);
-            } else if (strcmp(var, "scale") == 0) {
-                if (val < 0) {
-                    cdc_print("ERR: scale must be >= 0\r\n");
-                    return;
-                }
-                g_state->cal_state.force_scale_percent.store(val);
-            } else if (strcmp(var, "friction") == 0) {
-                if (val < 0 || val > 10000) {
-                    cdc_print("ERR: friction must be 0 to 10000\r\n");
-                    return;
-                }
-                g_state->cal_state.friction_fade_force.store(val);
-            } else if (strcmp(var, "amin") == 0 || strcmp(var, "amax") == 0 || 
+            if (strcmp(var, "amin") == 0 || strcmp(var, "amax") == 0 || 
                     strcmp(var, "bmin") == 0 || strcmp(var, "bmax") == 0) {
-                uint16_t amin, amax, bmin, bmax;
-                g_pedals->get_calibration(amin, amax, bmin, bmax);
-                if (strcmp(var, "amin") == 0) amin = val;
-                else if (strcmp(var, "amax") == 0) amax = val;
-                else if (strcmp(var, "bmin") == 0) bmin = val;
-                else if (strcmp(var, "bmax") == 0) bmax = val;
-                g_pedals->set_calibration(amin, amax, bmin, bmax);
+                
+                if (val < 0 || val > 4095) {
+                    cdc_print("ERR: Value must be 0 to 4095\r\n");
+                    return;
+                }
+
+                if (strcmp(var, "amin") == 0) g_state->cal_state.accel_min.store(val);
+                else if (strcmp(var, "amax") == 0) g_state->cal_state.accel_max.store(val);
+                else if (strcmp(var, "bmin") == 0) g_state->cal_state.brake_min.store(val);
+                else if (strcmp(var, "bmax") == 0) g_state->cal_state.brake_max.store(val);
+                g_pedals->apply_calibration(g_state->cal_state);
             } else {
-                cdc_print("ERR: Unknown variable\r\n");
-                print_help();
-                return;
+                if (strcmp(var, "cwz") == 0) {
+                    if (val < 0 || val > g_state->cal_state.forward_max_pwm.load()) {
+                        cdc_print("ERR: maxpwm must be 0 to maxpwm\r\n");
+                        return;
+                    }
+                    g_state->cal_state.cw_zero_pwm.store(static_cast<uint16_t>(val));
+                }
+                else if (strcmp(var, "ccz") == 0) {
+                    if (val < 0 || val > g_state->cal_state.forward_max_pwm.load()) {
+                        cdc_print("ERR: maxpwm must be 0 to maxpwm\r\n");
+                        return;
+                    }
+                    g_state->cal_state.ccw_zero_pwm.store(static_cast<uint16_t>(val));
+                } 
+                else if (strcmp(var, "center") == 0) {
+                    if (val < 0 || val > 4095) {
+                        cdc_print("ERR: Value must be 0 to 4095\r\n");
+                        return;
+                    }
+                    g_state->cal_state.center_offset.store(val);
+                } else if (strcmp(var, "angle") == 0) {
+                    if (val < 180) {
+                        cdc_print("ERR: angle must be >= 180 degrees\r\n");
+                        return;
+                    }
+                    g_state->cal_state.wheel_angle_deg.store(val);
+                    int32_t half_deg = val / 2;
+                    int32_t max_half_angle_counts = (half_deg * WHEEL_COUNTS_PER_REV) / 360;
+                    g_state->cal_state.max_half_angle_counts.store(max_half_angle_counts);
+                } else if (strcmp(var, "damper") == 0) {
+                    if (val < 0 || val > 10000) {
+                        cdc_print("ERR: damper must be 0 to 10000\r\n");
+                        return;
+                    }
+                    g_state->cal_state.system_damper_strength.store(val);
+                } else if (strcmp(var, "maxpwm") == 0) {
+                    if (val < 0 || val > PWM_WRAP) {
+                        cdc_print("ERR: maxpwm must be 0 to 6249\r\n");
+                        return;
+                    }
+                    g_state->cal_state.forward_max_pwm.store(val);
+                } else if (strcmp(var, "scale") == 0) {
+                    if (val < 0) {
+                        cdc_print("ERR: scale must be >= 0\r\n");
+                        return;
+                    }
+                    g_state->cal_state.force_scale_percent.store(val);
+                } else if (strcmp(var, "friction") == 0) {
+                    if (val < 0 || val > 10000) {
+                        cdc_print("ERR: friction must be 0 to 10000\r\n");
+                        return;
+                    }
+                    g_state->cal_state.friction_fade_force.store(val);
+                } else {
+                    cdc_print("ERR: Unknown variable\r\n");
+                    print_help();
+                    return;
+                }
+                // Signal Core 1 to re-apply the new calibration values
+                g_state->calibration_reload.store(true);
             }
             cdc_print("Updated.\r\n");
-            // Signal Core 1 to re-apply the new calibration values
-            g_state->calibration_reload.store(true);
         }
     }
 

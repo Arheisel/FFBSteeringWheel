@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include "config.h"
+#include "shared_state.h"
 
 class PedalReader {
 public:
@@ -10,11 +11,8 @@ public:
     int16_t get_accel() const { return accel_filtered_; }
     int16_t get_brake() const { return brake_filtered_; }
 
-    // Calibration: set min/max ADC values for scaling
-    void set_calibration(uint16_t accel_min, uint16_t accel_max,
-                         uint16_t brake_min, uint16_t brake_max);
-    void get_calibration(uint16_t& accel_min, uint16_t& accel_max,
-                         uint16_t& brake_min, uint16_t& brake_max) const;
+    // Calibration: load min/max ADC values from CalibrationState
+    void apply_calibration(const CalibrationState& state);
 
 private:
     uint16_t trimmed_mean_filter(const uint16_t* history, uint8_t depth);

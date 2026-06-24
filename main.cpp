@@ -52,47 +52,14 @@ int main() {
     debug_serial_init(g_shared_state, g_pedals, g_flash);
 
     // Load flash data
-    FlashCalibrationData cal_data;
-    bool has_flash = g_flash.load(cal_data);
+    bool has_flash = g_flash.load(g_shared_state.cal_state);
 
     if (has_flash) {
-        g_shared_state.cal_state.center_offset.store(cal_data.center_position);
-        g_pedals.set_calibration(cal_data.accel_min, cal_data.accel_max,
-                                 cal_data.brake_min, cal_data.brake_max);
-                                 
-        int32_t half_angle_deg = cal_data.wheel_angle_deg / 2;
-        int32_t max_half_angle_counts = (half_angle_deg * WHEEL_COUNTS_PER_REV) / 360;
-        g_shared_state.cal_state.max_half_angle_counts.store(max_half_angle_counts);
-        g_shared_state.cal_state.wheel_angle_deg.store(cal_data.wheel_angle_deg);
-                                 
-        g_shared_state.cal_state.cw_zero_pwm.store(cal_data.cw_zero_pwm);
-        g_shared_state.cal_state.ccw_zero_pwm.store(cal_data.ccw_zero_pwm);
-        for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
-            g_shared_state.cal_state.cw_speed[i].store(cal_data.cw_speed[i]);
-            g_shared_state.cal_state.ccw_speed[i].store(cal_data.ccw_speed[i]);
-        }
-        g_shared_state.cal_state.system_damper_strength.store(cal_data.system_damper_strength);
-        g_shared_state.cal_state.forward_max_pwm.store(cal_data.forward_max_pwm);
-        g_shared_state.cal_state.force_scale_percent.store(cal_data.force_scale_percent);
-        g_shared_state.cal_state.friction_fade_force.store(cal_data.friction_fade_force);
-        g_shared_state.cal_state.valid.store(true);
-
         g_shared_state.led_status.set(SystemStatus::BootWait);
     } else {
-        // Provide safe defaults
-        g_pedals.set_calibration(100, 4000, 100, 4000);
-        
-        int32_t half_angle_deg = DEFAULT_MAX_WHEEL_ANGLE_DEG / 2;
-        int32_t max_half_angle_counts = (half_angle_deg * WHEEL_COUNTS_PER_REV) / 360;
-        g_shared_state.cal_state.max_half_angle_counts.store(max_half_angle_counts);
-        g_shared_state.cal_state.wheel_angle_deg.store(DEFAULT_MAX_WHEEL_ANGLE_DEG);
-        g_shared_state.cal_state.system_damper_strength.store(0);
-        g_shared_state.cal_state.forward_max_pwm.store(DEFAULT_FORWARD_MAX_PWM);
-        g_shared_state.cal_state.force_scale_percent.store(DEFAULT_FORCE_SCALE_PERCENT);
-        g_shared_state.cal_state.friction_fade_force.store(DEFAULT_FRICTION_FADE_FORCE);
-
         g_shared_state.led_status.set(SystemStatus::FlashCalMissing);
     }
+    g_pedals.apply_calibration(g_shared_state.cal_state);
     
     // Preload true button state
     for (int i = 0; i < DEBOUNCE_READS + 1; i++) {
@@ -142,7 +109,7 @@ int main() {
     g_shared_state.led_status.clear(SystemStatus::FlashCalMissing);
 
     if (long_press) {
-        if (num_pressed == 2) { //Bootloader Mode
+        if (num_pressed == 3) { //Bootloader Mode
             // Flash LED quickly to indicate bootloader transition
             g_shared_state.led_status.set(SystemStatus::RapidFlash);
             g_led.sleep_ms(1000);
@@ -151,8 +118,11 @@ int main() {
                 tight_loop_contents();
             }
         }
+        else if (num_pressed == 2 && has_flash) {
+            run_lut_calibration(g_shared_state, g_buttons, g_led, g_flash);
+        }
         else {
-            run_calibration(g_shared_state, g_buttons, g_pedals, g_led, g_flash);
+            run_full_calibration(g_shared_state, g_buttons, g_pedals, g_led, g_flash);
             // run_calibration handles reboot, so this never returns
         }
     }

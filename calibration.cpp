@@ -154,14 +154,138 @@ namespace {
         return static_cast<uint32_t>((max_vel >= 0) ? max_vel : -max_vel);
     }
 
+    void calibrate_center(SystemContext& context, SharedState& state) {        
+        // Read initial state to populate raw angle before capturing center
+        block_read_sensor(context);
+
+        int32_t raw_center = context.parser.get_absolute_raw() & 0x0FFF;
+        
+        // Save to shared state and parser
+        state.cal_state.center_offset.store(raw_center);
+        context.parser.set_center(raw_center);
+
+        // Read again to re-initialize parser with the new center
+        block_read_sensor(context);
+    }
+
+    void calibrate_zero_pwm(SystemContext& context, SharedState& state) {
+        state.led_status.force(SystemStatus::MotorSweepsActive);
+        context.led.update();
+
+        // 1. Find Zero PWM
+        uint16_t cw_zero = find_zero_pwm(MotorControl::Direction::CW, context);
+        uint16_t ccw_zero = find_zero_pwm(MotorControl::Direction::CCW, context);
+        ccw_zero = (ccw_zero + find_zero_pwm(MotorControl::Direction::CCW, context)) / 2;
+        cw_zero = (cw_zero + find_zero_pwm(MotorControl::Direction::CW, context)) / 2;
+            
+        state.cal_state.cw_zero_pwm.store(cw_zero);
+        state.cal_state.ccw_zero_pwm.store(ccw_zero);
+
+        state.led_status.clear(SystemStatus::MotorSweepsActive);
+    }
+
+    void calibrate_luts(SystemContext& context, SharedState& state) {
+        state.led_status.force(SystemStatus::MotorSweepsActive);
+        context.led.update();
+        
+        // We assume parser is correctly centered already.
+        // During LUT-only cal, we rely on the flash-loaded center and zero PWM values.
+        block_read_sensor(context);
+
+        // Apply friction compensation immediately so the speed sweeps are accurate
+        context.motor.apply_calibration(state.cal_state);
+        
+        // Measure speeds at different force levels
+        for (uint8_t i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
+            int32_t force = CAL_FORCE_LEVELS[i];
+            
+            state.cal_state.cw_speed[i].store(measure_max_speed(force, context));
+            state.cal_state.ccw_speed[i].store(measure_max_speed(-force, context));
+        }
+        
+        state.led_status.clear(SystemStatus::MotorSweepsActive);
+    }
+
+    void calibrate_pedals(SharedState& state, ButtonReader& buttons, PedalReader& pedals, LEDController& led) {
+        state.led_status.force(SystemStatus::PedalCalActive);
+
+        uint16_t accel_min = 4095, accel_max = 0;
+        uint16_t brake_min = 4095, brake_max = 0;
+
+        // Wait for user to release all buttons first
+        while (buttons.get_buttons() != 0) {
+            buttons.update();
+            led.update();
+            sleep_us(BUTTON_UPDATE_INTERVAL_US);
+        }
+
+        uint64_t press_time_us = 0;
+        bool save_triggered = false;
+        
+        while (!save_triggered) {
+            buttons.update();
+            pedals.update();
+            led.update();
+
+            // Read raw compensated values so calibration matches regular operation.
+            uint16_t a_raw = 0;
+            uint16_t b_raw = 0;
+            pedals.read_raw_compensated(a_raw, b_raw);
+
+            if (a_raw < accel_min) accel_min = a_raw;
+            if (a_raw > accel_max) accel_max = a_raw;
+            if (b_raw < brake_min) brake_min = b_raw;
+            if (b_raw > brake_max) brake_max = b_raw;
+
+            if (buttons.get_buttons() != 0) {
+                if (press_time_us == 0) {
+                    press_time_us = time_us_64();
+                } else if ((time_us_64() - press_time_us) / 1000 > LONG_PRESS_MS) {
+                    save_triggered = true;
+                }
+            } else {
+                press_time_us = 0;
+            }
+            sleep_ms(1);
+        }
+
+        state.cal_state.accel_min.store(accel_min);
+        state.cal_state.accel_max.store(accel_max);
+        state.cal_state.brake_min.store(brake_min);
+        state.cal_state.brake_max.store(brake_max);
+
+        state.led_status.clear(SystemStatus::PedalCalActive);
+    }
+
+    void save_and_reboot(SharedState& state, LEDController& led, FlashStorage& flash) {
+        // Flash LED quickly to indicate flash save
+        state.led_status.set(SystemStatus::RapidFlash);
+        led.sleep_ms(1000);
+        state.led_status.clear(SystemStatus::RapidFlash);
+
+        // Use core1_running = false since Core 1 isn't running yet
+        bool save_success = flash.save(state.cal_state, false);
+
+        if (!save_success) {
+            state.led_status.set(SystemStatus::FlashWriteFailed);
+            // Do not reboot; just stay here and flash the error code
+            while (true) {
+                led.sleep_ms(10);
+            }
+        }
+
+        // Reboot to apply new flash settings cleanly
+        watchdog_reboot(0, 0, 1);
+        while (true) {
+            tight_loop_contents();
+        }
+    }
 }
 
-void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& pedals, LEDController& led, FlashStorage& flash) {
-
+void run_full_calibration(SharedState& state, ButtonReader& buttons, PedalReader& pedals, LEDController& led, FlashStorage& flash) {
     SystemContext context(led, state.led_status);
 
     if (!context.i2c.init()) {
-        state.cal_state.valid = false;
         state.led_status.set(SystemStatus::EncoderConfWriteFailed);
         while (true) {
             led.sleep_ms(10);
@@ -170,136 +294,30 @@ void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& ped
     context.parser.init();
     context.motor.init();
 
-    state.led_status.force(SystemStatus::MotorSweepsActive);
-    led.update();
-    
-    // Read initial state to populate raw angle before capturing center
-    block_read_sensor(context);
+    calibrate_center(context, state);
+    calibrate_zero_pwm(context, state);
+    calibrate_luts(context, state);
 
-    int32_t raw_center = context.parser.get_absolute_raw() & 0x0FFF;
-    
-    // Save to shared state and parser
-    state.cal_state.center_offset.store(raw_center);
-    context.parser.set_center(raw_center);
+    calibrate_pedals(state, buttons, pedals, led);
 
-    CalibrationState& cal_state = state.cal_state;
-    cal_state.valid = false;
-    
-    // Read again to re-initialize parser with the new center
-    block_read_sensor(context);
-    
-    // 1. Find Zero PWM
-    uint16_t cw_zero = find_zero_pwm(MotorControl::Direction::CW, context);
-    uint16_t ccw_zero = find_zero_pwm(MotorControl::Direction::CCW, context);
-    ccw_zero = (ccw_zero + find_zero_pwm(MotorControl::Direction::CCW, context)) / 2;
-    cw_zero = (cw_zero + find_zero_pwm(MotorControl::Direction::CW, context)) / 2;
-        
-    cal_state.cw_zero_pwm.store(cw_zero);
-    cal_state.ccw_zero_pwm.store(ccw_zero);
+    save_and_reboot(state, led, flash);
+}
 
-    // Apply friction compensation immediately so the speed sweeps are accurate
-    context.motor.apply_calibration(cal_state);
-    
-    // 2. Measure speeds at different force levels
-    for (uint8_t i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
-        int32_t force = CAL_FORCE_LEVELS[i];
-        
-        cal_state.cw_speed[i].store(measure_max_speed(force, context));
-        cal_state.ccw_speed[i].store(measure_max_speed(-force, context));
-    }
-    
-    // Verify LUTs are somewhat sane (speed should monotonically increase)
-    // If not, we could apply a smoothing pass here, but for now we just accept it.
-    
-    cal_state.valid.store(true);
-    state.led_status.clear(SystemStatus::MotorSweepsActive);
+void run_lut_calibration(SharedState& state, ButtonReader& buttons, LEDController& led, FlashStorage& flash) {
+    SystemContext context(led, state.led_status);
 
-    // 3. Pedal Calibration Phase
-    state.led_status.force(SystemStatus::PedalCalActive);
-
-    // Let's just track min/max for pedals
-    uint16_t accel_min = 4095, accel_max = 0;
-    uint16_t brake_min = 4095, brake_max = 0;
-
-    // Wait for user to release all buttons first
-    while (buttons.get_buttons() != 0) {
-        buttons.update();
-        led.update();
-        sleep_us(BUTTON_UPDATE_INTERVAL_US);
-    }
-
-    // Phase 2: User pumps pedals. Long press cal button again to save.
-    uint64_t press_time_us = 0;
-    bool save_triggered = false;
-    
-    while (!save_triggered) {
-        buttons.update();
-        pedals.update();
-        led.update();
-
-        // Read raw compensated values so calibration matches regular operation.
-        uint16_t a_raw = 0;
-        uint16_t b_raw = 0;
-        pedals.read_raw_compensated(a_raw, b_raw);
-
-        if (a_raw < accel_min) accel_min = a_raw;
-        if (a_raw > accel_max) accel_max = a_raw;
-        if (b_raw < brake_min) brake_min = b_raw;
-        if (b_raw > brake_max) brake_max = b_raw;
-
-        if (buttons.get_buttons() != 0) {
-            if (press_time_us == 0) {
-                press_time_us = time_us_64();
-            } else if ((time_us_64() - press_time_us) / 1000 > LONG_PRESS_MS) {
-                save_triggered = true;
-            }
-        } else {
-            press_time_us = 0;
-        }
-        sleep_ms(1);
-    }
-
-    state.led_status.clear(SystemStatus::PedalCalActive);
-
-    // Flash LED quickly to indicate flash save
-    state.led_status.set(SystemStatus::RapidFlash);
-    led.sleep_ms(1000);
-    state.led_status.clear(SystemStatus::RapidFlash);
-
-    // Save everything to flash
-    FlashCalibrationData data;
-    data.center_position = state.cal_state.center_offset.load();
-    data.accel_min = accel_min;
-    data.accel_max = accel_max;
-    data.brake_min = brake_min;
-    data.brake_max = brake_max;
-    
-    data.cw_zero_pwm = state.cal_state.cw_zero_pwm.load();
-    data.ccw_zero_pwm = state.cal_state.ccw_zero_pwm.load();
-    for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
-        data.cw_speed[i] = state.cal_state.cw_speed[i].load();
-        data.ccw_speed[i] = state.cal_state.ccw_speed[i].load();
-    }
-    data.wheel_angle_deg = state.cal_state.wheel_angle_deg.load();
-    data.system_damper_strength = state.cal_state.system_damper_strength.load();
-    data.forward_max_pwm = state.cal_state.forward_max_pwm.load();
-    data.force_scale_percent = state.cal_state.force_scale_percent.load();
-    data.friction_fade_force = state.cal_state.friction_fade_force.load();
-
-    // Use core1_running = false since Core 1 isn't running yet
-    bool save_success = flash.save(data, false);
-
-    if (!save_success) {
-        state.led_status.set(SystemStatus::FlashWriteFailed);
-        // Do not reboot; just stay here and flash the error code
+    if (!context.i2c.init()) {
+        state.led_status.set(SystemStatus::EncoderConfWriteFailed);
         while (true) {
             led.sleep_ms(10);
         }
     }
+    context.parser.init();
+    context.parser.set_center(state.cal_state.center_offset.load());
+    context.motor.init();
 
-    // Reboot to apply new flash settings cleanly
-    watchdog_reboot(0, 0, 1);
-    while (true) {
-        tight_loop_contents();
-    }
+    // Calibrate only the LUTs, leave center and zero PWM untouched
+    calibrate_luts(context, state);
+
+    save_and_reboot(state, led, flash);
 }

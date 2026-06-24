@@ -93,8 +93,6 @@ struct CalibrationState {
     std::atomic<uint16_t> cw_zero_pwm{0};
     std::atomic<uint16_t> ccw_zero_pwm{0};
 
-    std::atomic<bool>     valid{false};
-
     std::atomic<int32_t> center_offset{0};
     std::atomic<uint16_t> wheel_angle_deg{DEFAULT_MAX_WHEEL_ANGLE_DEG};
     std::atomic<int32_t> max_half_angle_counts{DEFAULT_MAX_WHEEL_ANGLE_DEG * WHEEL_COUNTS_PER_REV / 360};
@@ -102,6 +100,12 @@ struct CalibrationState {
     std::atomic<uint16_t> forward_max_pwm{DEFAULT_FORWARD_MAX_PWM};
     std::atomic<uint16_t> force_scale_percent{DEFAULT_FORCE_SCALE_PERCENT};
     std::atomic<uint16_t> friction_fade_force{DEFAULT_FRICTION_FADE_FORCE};
+
+    // Pedals calibration
+    std::atomic<uint16_t> accel_min{100};
+    std::atomic<uint16_t> accel_max{4000};
+    std::atomic<uint16_t> brake_min{100};
+    std::atomic<uint16_t> brake_max{4000};
 };
 
 // =========================================================================
