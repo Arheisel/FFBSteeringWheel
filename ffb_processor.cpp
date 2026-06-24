@@ -58,6 +58,16 @@ void FFBProcessor::apply_calibration(const CalibrationState& cal_state) {
     cal_lut_ccw_ = &cal_state.ccw_speed;
     max_half_angle_counts_ = cal_state.max_half_angle_counts.load(std::memory_order_relaxed);
     system_damper_strength_ = cal_state.system_damper_strength.load(std::memory_order_relaxed);
+
+    if(system_damper_strength_ > 0) {
+        system_damper_effect_.params.effectType = 9;
+        system_damper_effect_.condition[0].positiveCoefficient = -system_damper_strength_;
+        system_damper_effect_.condition[0].negativeCoefficient = -system_damper_strength_;
+        system_damper_effect_.condition[0].positiveSaturation = 10000;
+        system_damper_effect_.condition[0].negativeSaturation = 10000;
+        system_damper_effect_.condition[0].deadBand = 0;
+        system_damper_effect_.condition[0].cpOffset = 0;
+    }
 }
 
 // =========================================================================
@@ -181,16 +191,7 @@ int16_t FFBProcessor::calculate(int32_t position, int32_t velocity, EffectState&
 
     // ---- Firmware-Controlled Damper ----
     if (system_damper_strength_ > 0 && velocity != 0) {
-        EffectSlot hw_e;
-        hw_e.params.effectType = 9;
-        hw_e.condition[0].positiveCoefficient = -system_damper_strength_;
-        hw_e.condition[0].negativeCoefficient = -system_damper_strength_;
-        hw_e.condition[0].positiveSaturation = 10000;
-        hw_e.condition[0].negativeSaturation = 10000;
-        hw_e.condition[0].deadBand = 0;
-        hw_e.condition[0].cpOffset = 0;
-
-        int32_t coeff_percent = calc_condition_force(hw_e, scaled_vel, 0); 
+        int32_t coeff_percent = calc_condition_force(system_damper_effect_, scaled_vel, 0); 
         int32_t req_force = lookup_required_force(velocity);
         total_force += (coeff_percent * req_force) / 10000;
     }
