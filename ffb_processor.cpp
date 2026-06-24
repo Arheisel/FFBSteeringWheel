@@ -197,7 +197,7 @@ int16_t FFBProcessor::calculate(int32_t position, int32_t velocity, EffectState&
     }
 
     // ---- Overpower Detection (Dynamic Damping) ----
-    if (total_force != 0 && velocity != 0) {
+    if ((total_force > 0 && velocity > 0) || (total_force < 0 && velocity < 0)) {
         int32_t expected_vel = lookup_expected_speed(total_force);
         // Add a safety margin to avoid false positives from noise
         expected_vel += VELOCITY_MARGIN_CPS;

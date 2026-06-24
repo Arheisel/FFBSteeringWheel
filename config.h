@@ -57,7 +57,7 @@ constexpr uint8_t FLASH_DATA_VERSION    = 6;
 // Overpower Detection
 constexpr int32_t DYNAMIC_DAMPING_FACTOR = 50;      // Tuning parameter for overpower opposition
 // Increased margin from 2000 to 8000 to prevent closed-loop oscillation caused by imperfect LUTs
-constexpr int32_t VELOCITY_MARGIN_CPS        = 5000;       // Safety margin (counts/sec) for imperfect LUT readings
+constexpr int32_t VELOCITY_MARGIN_CPS        = 2000;       // Safety margin (counts/sec) for imperfect LUT readings
 
 // Force levels for speed LUT calibration sweeps (raw -10000 to +10000 scale)
 // Scaled to stay under the 140 RPM speed limiter (to get an accurate curve)
