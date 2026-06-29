@@ -9,7 +9,6 @@
 #include <cstring>
 #include "usb_hid.h"
 #include "tusb.h"
-#include "hid_device.h"
 #include "pico/time.h"
 #include "config.h"
 #include "usb_ffb_descriptors.h"

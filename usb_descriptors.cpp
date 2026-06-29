@@ -10,7 +10,6 @@
 #include <cstring>
 #include "tusb.h"
 #include "bsp/board_api.h"
-#include "hid_device.h"
 #include "config.h"
 #include "usb_ffb_descriptors.h"
 
