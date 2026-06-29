@@ -64,7 +64,7 @@ namespace {
         block_read_sensor(context);
         int32_t start_pos = context.parser.get_position();
 
-        while (test_pwm < STALL_PWM_MAX) {
+        while (test_pwm < CONT_STALL_PWM) {
             context.motor.set_pwm(test_pwm, dir, 0);
             
             // Wait briefly for movement
@@ -199,8 +199,8 @@ namespace {
         for (uint8_t i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
             int32_t force = CAL_FORCE_LEVELS[i];
             
-            state.cal_state.cw_speed[i].store(measure_max_speed(force, context));
-            state.cal_state.ccw_speed[i].store(measure_max_speed(-force, context));
+            state.cal_state.cw_speed_lut[i].store(measure_max_speed(force, context));
+            state.cal_state.ccw_speed_lut[i].store(measure_max_speed(-force, context));
         }
         
         state.led_status.clear(SystemStatus::MotorSweepsActive);

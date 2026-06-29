@@ -51,9 +51,6 @@ constexpr uint16_t DEFAULT_MAX_WHEEL_ANGLE_DEG = 1800;
 
 constexpr uint32_t LONG_PRESS_MS         = 5000;    // Hold > 5s for Flash cal
 
-// Flash calibration version
-constexpr uint8_t FLASH_DATA_VERSION    = 6;
-
 // Overpower Detection
 constexpr int32_t DYNAMIC_DAMPING_FACTOR = 50;      // Tuning parameter for overpower opposition
 // Increased margin from 2000 to 8000 to prevent closed-loop oscillation caused by imperfect LUTs
@@ -84,8 +81,7 @@ constexpr int16_t  CAL_FORCE_MIN_SWEEP_COUNTS  = WHEEL_COUNTS_PER_REV;
 
 constexpr uint16_t PWM_WRAP              = 6249;   // TOP value, duty 0..6249
 
-// Default values (now stored in flash)
-constexpr uint16_t DEFAULT_FORWARD_MAX_PWM       = 3124;
+// Flash Default values
 constexpr uint32_t DEFAULT_FORCE_SCALE_PERCENT   = 100;
 constexpr uint16_t DEFAULT_FRICTION_FADE_FORCE   = 150;
 
@@ -94,15 +90,14 @@ constexpr uint16_t DEFAULT_FRICTION_FADE_FORCE   = 150;
 // =========================================================================
 
 // Dead-time between direction changes to prevent shoot-through (microseconds)
-constexpr uint16_t DEAD_TIME_US           = 50;
+constexpr uint16_t DEAD_TIME_US             = 50;
 
 // Stall protection governor:
-// Differentiates between moving forward (with the motor) and backwards (against the motor).
-// Tuned for 12V 775 DC motor to limit current to a maximum of 5.5A
-constexpr int32_t STALL_PWM_MAX                = 1874; // ~30% duty cycle
-constexpr int32_t FORWARD_VELOCITY_THRESHOLD_CPS   = 36950;   // Raw counts/sec
-constexpr int32_t BACKWARDS_VELOCITY_THRESHOLD_CPS = 24000;   // Raw counts/sec
-constexpr uint16_t BACKWARDS_PWM_MAX            = 0;
+// Tuned for 12V 775 DC motor to limit current to a maximum of 15A
+constexpr uint16_t PEAK_STALL_PWM           = 3749;  // ~60% duty cycle
+constexpr uint16_t CONT_STALL_PWM           = 1874;  // ~30% duty cycle
+constexpr int32_t PEAK_FALLOFF_TIME_US      = 10000000; // 10s
+constexpr int32_t PEAK_RECOVERY_PENALTY     = 3;
 
 // =========================================================================
 // PROTECTION ENVELOPE (Speed Limiter)
@@ -189,10 +184,10 @@ constexpr uint8_t  LED_MIN_DISPLAY_CYCLES = 2;
 // USB & FFB CONFIGURATION
 // =========================================================================
 
-constexpr uint16_t USB_VID               = 0xCAFE;
-constexpr uint16_t USB_PID               = 0x4003;
+constexpr uint16_t USB_VID                = 0xCAFE;
+constexpr uint16_t USB_PID                = 0x4003;
 constexpr uint32_t USB_REPORT_INTERVAL_US = 1000;
-constexpr uint8_t  MAX_EFFECTS           = 40;
+constexpr uint8_t  MAX_EFFECTS            = 40;
 
 // =========================================================================
 // STATUS / ERROR CODES  (LED flash code = enum value)
@@ -200,20 +195,20 @@ constexpr uint8_t  MAX_EFFECTS           = 40;
 // Priority: highest numeric value wins.
 
 enum class SystemStatus : uint8_t {
-    Normal           = 0,   // Solid ON — no flash code
-    BootWait         = 1,   // Awaiting button press to boot or enter calibration
+    Normal            = 0,   // Solid ON — no flash code
+    BootWait          = 1,   // Awaiting button press to boot or enter calibration
     MotorSweepsActive = 2,  // Flash calibration: Motor sweeps in progress
-    PedalCalActive   = 3,   // Flash calibration: Pedal calibration in progress
-    FlashCalMissing  = 5,   // No valid flash calibration data
-    FlashWriteFailed = 6,  // Failed to save calibration data to flash
-    MagnetHigh       = 7,   // AS5600: magnet too strong (MH=1)
-    MagnetLow        = 8,   // AS5600: magnet too weak (ML=1)
-    MagnetMissing    = 9,   // AS5600: no magnet detected (MD=0)
-    I2CWatchdogFired = 10,  // I2C DMA watchdog expired — motor killed
-    EncoderDesync    = 11,  // Repeated impossible jumps — motor killed
+    PedalCalActive    = 3,   // Flash calibration: Pedal calibration in progress
+    FlashCalMissing   = 5,   // No valid flash calibration data
+    FlashWriteFailed  = 6,  // Failed to save calibration data to flash
+    MagnetHigh        = 7,   // AS5600: magnet too strong (MH=1)
+    MagnetLow         = 8,   // AS5600: magnet too weak (ML=1)
+    MagnetMissing     = 9,   // AS5600: no magnet detected (MD=0)
+    I2CWatchdogFired  = 10,  // I2C DMA watchdog expired — motor killed
+    EncoderDesync     = 11,  // Repeated impossible jumps — motor killed
     DesyncAfterRecovery = 12, // Impossible jump on first read after watchdog recovery
     EncoderConfWriteFailed  = 13,  // AS5600 CONF register write failed after retries
-    RapidFlash       = 254  // Special mode: rapid continuous flashing, clearable immediately
+    RapidFlash        = 254  // Special mode: rapid continuous flashing, clearable immediately
 };
 
 constexpr uint8_t ERROR_LOG_SIZE = 16;

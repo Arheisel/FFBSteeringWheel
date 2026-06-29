@@ -2,7 +2,8 @@
 #include <cstdint>
 #include "config.h"
 
-class AS5600Parser {
+class AS5600Parser
+{
 public:
     void init();
 
@@ -17,23 +18,27 @@ public:
     uint8_t get_error_flags() const { return error_flags_; }
 
     // Set the center offset
-    void set_center(int32_t center) { center_offset_ = center; first_read_ = true; }
+    void set_center(int32_t center)
+    {
+        center_offset_ = center;
+        first_read_ = true;
+    }
 
 private:
     // Position tracking
-    int32_t  accumulated_position_ = 0;   // Continuous position from center
-    int32_t  center_offset_ = 0;          // Flash-saved center position
-    int32_t  turn_count_ = 0;             // Number of full encoder wraps
+    int32_t accumulated_position_ = 0; // Continuous position from center
+    int32_t center_offset_ = 0;        // Flash-saved center position
+    int32_t turn_count_ = 0;           // Number of full encoder wraps
     uint16_t last_raw_angle_ = 0;
-    bool     first_read_ = true;
+    bool first_read_ = true;
 
     // Velocity calculation
-    int32_t  velocity_cps_ = 0;           // Raw instantaneous counts/sec (used for dead-reckoning)
-    int32_t  filtered_velocity_cps_ = 0;  // EMA-smoothed counts/sec (used by motor governor)
-    uint8_t  zero_count_ = 0;             // Consecutive zero-velocity reads
+    int32_t velocity_cps_ = 0;          // Raw instantaneous counts/sec (used for dead-reckoning)
+    int32_t filtered_velocity_cps_ = 0; // EMA-smoothed counts/sec (used by motor governor)
+    uint8_t zero_count_ = 0;            // Consecutive zero-velocity reads
     uint64_t last_time_us_ = 0;
 
     // Error state
-    uint8_t  error_flags_ = 0;
-    uint8_t  desync_counter_ = 0;
+    uint8_t error_flags_ = 0;
+    uint8_t desync_counter_ = 0;
 };

@@ -3,18 +3,20 @@
 #include "config.h"
 #include "shared_state.h"
 
-class MotorControl {
+class MotorControl
+{
 public:
-    enum class Direction : uint8_t {
+    enum class Direction : uint8_t
+    {
         OFF = 0,
-        CW  = 1,
+        CW = 1,
         CCW = 2,
         BRAKE = 3
     };
 
     void init();
 
-    void apply_calibration(const CalibrationState& cal_state);
+    void apply_calibration(const CalibrationState &cal_state);
 
     // Set the target PWM and direction.
     // Handles dead-time, friction compensation, and stall protection.
@@ -30,19 +32,23 @@ public:
     // Active stop (short terminals)
     void brake() { apply_pwm(0, Direction::BRAKE); }
 
-    // Applies the hardware limits for the current speed
-    uint16_t get_safe_max_pwm(Direction dir, int32_t velocity);
-
 private:
-    uint16_t forward_max_pwm_ = DEFAULT_FORWARD_MAX_PWM;
     uint16_t cw_zero_pwm_ = 0;
-    uint16_t cw_active_range_ = 0;
+    uint16_t cw_active_range_ = PEAK_STALL_PWM;
     uint16_t ccw_zero_pwm_ = 0;
-    uint16_t ccw_active_range_ = 0;
+    uint16_t ccw_active_range_ = PEAK_STALL_PWM;
     uint16_t force_scale_percent_ = DEFAULT_FORCE_SCALE_PERCENT;
     uint16_t friction_fade_force_ = DEFAULT_FRICTION_FADE_FORCE;
     uint16_t dynamic_force_ = 10000 - friction_fade_force_;
-    Direction current_direction_ = Direction::OFF;
+
+    Direction last_active_dir_ = Direction::OFF;
+    uint64_t last_stall_time_us_ = 0;   
+    int32_t remaining_peak_time_us_ = PEAK_FALLOFF_TIME_US;
+
+    // Applies the hardware limits for the current speed
+    uint16_t get_safe_max_pwm(int32_t velocity);
+
+    void update_stall_time(uint16_t pwm);
 
     void apply_pwm(uint16_t pwm, Direction dir);
 };

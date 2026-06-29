@@ -2,7 +2,8 @@
 #include <cstdint>
 #include "hardware/dma.h"
 
-class I2CDMA {
+class I2CDMA
+{
 public:
     bool init();
 
@@ -20,7 +21,7 @@ public:
     // data[0] = Status Register
     // data[1] = Raw Angle High
     // data[2] = Raw Angle Low
-    const uint8_t* get_data() const { return rx_buf_; }
+    const uint8_t *get_data() const { return rx_buf_; }
 
 private:
     // Shared I2C peripheral + AS5600 setup (used by init and reset_bus)
@@ -38,7 +39,7 @@ private:
     // 2: Read byte 2
     // 3: Read byte 3 & Stop
     uint16_t tx_cmd_buf_[4];
-    
+
     // Buffer for received data
     uint8_t rx_buf_[3];
 };

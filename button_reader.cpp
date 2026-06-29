@@ -14,15 +14,16 @@
 #include "hardware/timer.h"
 
 // Resolve SPI peripheral from config-derived instance number
-static auto* const SPI_PORT = SPI_INSTANCE == 0 ? spi0 : spi1;
+static auto *const SPI_PORT = SPI_INSTANCE == 0 ? spi0 : spi1;
 
-void ButtonReader::init() {
+void ButtonReader::init()
+{
     // Initialize SPI peripheral
     spi_init(SPI_PORT, SPI_FREQ_HZ);
     spi_set_format(SPI_PORT, 8, SPI_CPOL_1, SPI_CPHA_0, SPI_MSB_FIRST);
 
     gpio_set_function(PIN_SPI_SCK, GPIO_FUNC_SPI);
-    gpio_set_function(PIN_SPI_RX,  GPIO_FUNC_SPI);
+    gpio_set_function(PIN_SPI_RX, GPIO_FUNC_SPI);
 
     // Limit SCK drive strength and slew rate to reduce EMI/ringing
     gpio_set_drive_strength(PIN_SPI_SCK, GPIO_DRIVE_STRENGTH_2MA);
@@ -31,11 +32,11 @@ void ButtonReader::init() {
     // Latch pin — manual GPIO
     gpio_init(PIN_SPI_LATCH);
     gpio_set_dir(PIN_SPI_LATCH, GPIO_OUT);
-    
+
     // Limit LATCH drive strength and slew rate as well
     gpio_set_drive_strength(PIN_SPI_LATCH, GPIO_DRIVE_STRENGTH_2MA);
     gpio_set_slew_rate(PIN_SPI_LATCH, GPIO_SLEW_RATE_SLOW);
-    
+
     gpio_put(PIN_SPI_LATCH, 0);
 
     // Claim DMA channels
@@ -54,22 +55,25 @@ void ButtonReader::init() {
     channel_config_set_write_increment(&rx_cfg, true);
 
     dma_channel_configure(dma_rx_chan_, &rx_cfg,
-                          rx_buf_,                        // dest
-                          &spi_get_hw(SPI_PORT)->dr,          // src
-                          2,                               // count
-                          false);                          // don't start yet
+                          rx_buf_,                   // dest
+                          &spi_get_hw(SPI_PORT)->dr, // src
+                          2,                         // count
+                          false);                    // don't start yet
 
     dma_channel_configure(dma_tx_chan_, &tx_cfg,
-                          &spi_get_hw(SPI_PORT)->dr,          // dest
-                          tx_dummy_,                       // src
-                          2,                               // count
-                          false);                          // don't start yet
+                          &spi_get_hw(SPI_PORT)->dr, // dest
+                          tx_dummy_,                 // src
+                          2,                         // count
+                          false);                    // don't start yet
 }
 
-void ButtonReader::update() {
-    if (dma_active_) {
+void ButtonReader::update()
+{
+    if (dma_active_)
+    {
         // Check if finished
-        if (dma_channel_is_busy(dma_rx_chan_)) {
+        if (dma_channel_is_busy(dma_rx_chan_))
+        {
             return; // Still running, do nothing this frame
         }
 
@@ -77,7 +81,7 @@ void ButtonReader::update() {
 
         // 3. Assemble 16-bit value and invert (pull-up: 0 = pressed → 1 = pressed)
         uint16_t raw = static_cast<uint16_t>((rx_buf_[0] << 8) | rx_buf_[1]);
-        raw = ~raw;  // Invert: 0=pressed becomes 1=pressed
+        raw = ~raw; // Invert: 0=pressed becomes 1=pressed
 
         // 4. Store in rolling buffer
         history_[history_idx_] = raw;
@@ -86,14 +90,16 @@ void ButtonReader::update() {
         // 5. Debounce: require DEBOUNCE_READS consecutive identical reads to change state in either direction.
         uint16_t all_pressed = 0xFFFF;
         uint16_t any_pressed = 0;
-        for (uint8_t i = 0; i < DEBOUNCE_READS; i++) {
+        for (uint8_t i = 0; i < DEBOUNCE_READS; i++)
+        {
             all_pressed &= history_[i];
             any_pressed |= history_[i];
         }
         debounced_ = (debounced_ & any_pressed) | all_pressed;
     }
 
-    if (!dma_active_) {
+    if (!dma_active_)
+    {
         // 1. Latch: pulse HIGH then LOW to capture parallel button states
         gpio_put(PIN_SPI_LATCH, 1);
         // Brief delay for parallel load (tW).

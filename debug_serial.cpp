@@ -16,13 +16,15 @@
 #include <cstring>
 #include <cstdlib>
 
-namespace {
+namespace
+{
 
     // =========================================================================
     // Error Log — Lock-free ring buffer (single writer from ISR, single reader)
     // =========================================================================
 
-    struct ErrorLogEntry {
+    struct ErrorLogEntry
+    {
         uint64_t timestamp_us;
         SystemStatus error_code;
     };
@@ -31,9 +33,9 @@ namespace {
     volatile uint8_t g_error_log_write_idx = 0;
     uint8_t g_error_log_read_idx = 0;
 
-    SharedState* g_state = nullptr;
-    PedalReader* g_pedals = nullptr;
-    FlashStorage* g_flash = nullptr;
+    SharedState *g_state = nullptr;
+    PedalReader *g_pedals = nullptr;
+    FlashStorage *g_flash = nullptr;
 
     char g_line_buf[64];
     uint8_t g_line_len = 0;
@@ -49,21 +51,27 @@ namespace {
     // Helper: Write a string to CDC
     // =========================================================================
 
-    void cdc_print(const char* str) {
-        if (!tud_cdc_connected()) return;
+    void cdc_print(const char *str)
+    {
+        if (!tud_cdc_connected())
+            return;
         uint32_t len = strlen(str);
         uint32_t sent = 0;
-        while (sent < len) {
-            if (!tud_cdc_connected()) return;  // Guard against mid-write disconnect
+        while (sent < len)
+        {
+            if (!tud_cdc_connected())
+                return; // Guard against mid-write disconnect
             uint32_t avail = tud_cdc_write_available();
-            if (avail == 0) {
+            if (avail == 0)
+            {
                 tud_cdc_write_flush();
                 // Brief yield to let USB send
                 tud_task();
                 continue;
             }
             uint32_t chunk = len - sent;
-            if (chunk > avail) chunk = avail;
+            if (chunk > avail)
+                chunk = avail;
             tud_cdc_write(str + sent, chunk);
             sent += chunk;
         }
@@ -74,11 +82,14 @@ namespace {
     // Helper: Integer to string (avoids printf/snprintf overhead)
     // =========================================================================
 
-    char* int_to_str(int32_t val, char* buf) {
-        if (val < 0) {
+    char *int_to_str(int32_t val, char *buf)
+    {
+        if (val < 0)
+        {
             *buf++ = '-';
             // Handle INT32_MIN edge case
-            if (val == -2147483647 - 1) {
+            if (val == -2147483647 - 1)
+            {
                 strcpy(buf, "2147483648");
                 return buf + 10;
             }
@@ -87,34 +98,45 @@ namespace {
         // Write digits in reverse
         char tmp[11];
         int i = 0;
-        if (val == 0) {
+        if (val == 0)
+        {
             tmp[i++] = '0';
-        } else {
-            while (val > 0) {
+        }
+        else
+        {
+            while (val > 0)
+            {
                 tmp[i++] = '0' + (val % 10);
                 val /= 10;
             }
         }
         // Reverse into buf
-        for (int j = i - 1; j >= 0; j--) {
+        for (int j = i - 1; j >= 0; j--)
+        {
             *buf++ = tmp[j];
         }
         *buf = '\0';
         return buf;
     }
 
-    char* uint_to_str(uint32_t val, char* buf) {
+    char *uint_to_str(uint32_t val, char *buf)
+    {
         char tmp[11];
         int i = 0;
-        if (val == 0) {
+        if (val == 0)
+        {
             tmp[i++] = '0';
-        } else {
-            while (val > 0) {
+        }
+        else
+        {
+            while (val > 0)
+            {
                 tmp[i++] = '0' + (val % 10);
                 val /= 10;
             }
         }
-        for (int j = i - 1; j >= 0; j--) {
+        for (int j = i - 1; j >= 0; j--)
+        {
             *buf++ = tmp[j];
         }
         *buf = '\0';
@@ -125,43 +147,50 @@ namespace {
     // Command: Print live calibration data
     // =========================================================================
 
-    void cmd_calibration() {
-        if (!g_state || !g_pedals) {
+    void cmd_calibration()
+    {
+        if (!g_state || !g_pedals)
+        {
             cdc_print("ERR: No state\r\n");
             return;
         }
 
         char buf[64];
-        char* p;
+        char *p;
 
         cdc_print("=== CALIBRATION DATA ===\r\n");
 
-        p = buf; strcpy(p, "Center: "); p += 8;
+        p = buf;
+        strcpy(p, "Center: ");
+        p += 8;
         p = int_to_str(g_state->cal_state.center_offset.load(), p);
         strcpy(p, "\r\n");
         cdc_print(buf);
-        
-        p = buf; strcpy(p, "Wheel Angle (deg): "); p += 19;
+
+        p = buf;
+        strcpy(p, "Wheel Angle (deg): ");
+        p += 19;
         p = uint_to_str(g_state->cal_state.wheel_angle_deg.load(), p);
         strcpy(p, "\r\n");
         cdc_print(buf);
 
-        p = buf; strcpy(p, "System Damper: "); p += 15;
+        p = buf;
+        strcpy(p, "System Damper: ");
+        p += 15;
         p = uint_to_str(g_state->cal_state.system_damper_strength.load(), p);
         strcpy(p, "\r\n");
         cdc_print(buf);
 
-        p = buf; strcpy(p, "Forward Max PWM: "); p += 17;
-        p = uint_to_str(g_state->cal_state.forward_max_pwm.load(), p);
-        strcpy(p, "\r\n");
-        cdc_print(buf);
-
-        p = buf; strcpy(p, "Force Scale %: "); p += 15;
+        p = buf;
+        strcpy(p, "Force Scale %: ");
+        p += 15;
         p = uint_to_str(g_state->cal_state.force_scale_percent.load(), p);
         strcpy(p, "\r\n");
         cdc_print(buf);
 
-        p = buf; strcpy(p, "Friction Fade Force: "); p += 21;
+        p = buf;
+        strcpy(p, "Friction Fade Force: ");
+        p += 21;
         p = uint_to_str(g_state->cal_state.friction_fade_force.load(), p);
         strcpy(p, "\r\n");
         cdc_print(buf);
@@ -171,41 +200,55 @@ namespace {
         uint16_t bmin = g_state->cal_state.brake_min.load();
         uint16_t bmax = g_state->cal_state.brake_max.load();
 
-        p = buf; strcpy(p, "Accel: "); p += 7;
-        p = uint_to_str(amin, p); *p++ = '-';
+        p = buf;
+        strcpy(p, "Accel: ");
+        p += 7;
+        p = uint_to_str(amin, p);
+        *p++ = '-';
         p = uint_to_str(amax, p);
         strcpy(p, "\r\n");
         cdc_print(buf);
 
-        p = buf; strcpy(p, "Brake: "); p += 7;
-        p = uint_to_str(bmin, p); *p++ = '-';
+        p = buf;
+        strcpy(p, "Brake: ");
+        p += 7;
+        p = uint_to_str(bmin, p);
+        *p++ = '-';
         p = uint_to_str(bmax, p);
         strcpy(p, "\r\n");
         cdc_print(buf);
 
-        p = buf; strcpy(p, "CW Zero PWM: "); p += 13;
+        p = buf;
+        strcpy(p, "CW Zero PWM: ");
+        p += 13;
         p = uint_to_str(g_state->cal_state.cw_zero_pwm.load(), p);
         strcpy(p, "\r\n");
         cdc_print(buf);
 
-        p = buf; strcpy(p, "CCW Zero PWM: "); p += 14;
+        p = buf;
+        strcpy(p, "CCW Zero PWM: ");
+        p += 14;
         p = uint_to_str(g_state->cal_state.ccw_zero_pwm.load(), p);
         strcpy(p, "\r\n");
         cdc_print(buf);
 
         cdc_print("CW Speed LUT:");
-        for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
-            p = buf; *p++ = ' ';
-            p = int_to_str(g_state->cal_state.cw_speed[i].load(), p);
+        for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++)
+        {
+            p = buf;
+            *p++ = ' ';
+            p = int_to_str(g_state->cal_state.cw_speed_lut[i].load(), p);
             *p = '\0';
             cdc_print(buf);
         }
         cdc_print("\r\n");
 
         cdc_print("CCW Speed LUT:");
-        for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
-            p = buf; *p++ = ' ';
-            p = int_to_str(g_state->cal_state.ccw_speed[i].load(), p);
+        for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++)
+        {
+            p = buf;
+            *p++ = ' ';
+            p = int_to_str(g_state->cal_state.ccw_speed_lut[i].load(), p);
             *p = '\0';
             cdc_print(buf);
         }
@@ -216,12 +259,14 @@ namespace {
     // Command: Save calibration data
     // =========================================================================
 
-    void cmd_save_calibration() {
-        if (!g_state || !g_pedals || !g_flash) return;
+    void cmd_save_calibration()
+    {
+        if (!g_state || !g_pedals || !g_flash)
+            return;
 
         cdc_print("Saving to flash...\r\n");
 
-        // Core 1 is spinning, but we still pass core1_running=true so flash_safe_execute 
+        // Core 1 is spinning, but we still pass core1_running=true so flash_safe_execute
         // puts Core 1 into a lockout state cleanly before pausing Core 0 interrupts.
         bool ok = g_flash->save(g_state->cal_state, true);
 
@@ -232,51 +277,120 @@ namespace {
     // Command: Print live status
     // =========================================================================
 
-    void print_error_flags(uint8_t flags) {
+    void print_error_flags(uint8_t flags)
+    {
         char buf[128];
-        char* p = buf;
-        strcpy(p, "Err flags: "); p += 11;
+        char *p = buf;
+        strcpy(p, "Err flags: ");
+        p += 11;
         p = uint_to_str(flags, p);
-        
-        if (flags == 0) {
+
+        if (flags == 0)
+        {
             strcpy(p, " (None)\r\n");
-        } else {
-            strcpy(p, " ("); p += 2;
+        }
+        else
+        {
+            strcpy(p, " (");
+            p += 2;
             bool first = true;
-            if (flags & SensorState::ERR_MAGNET_HIGH) { strcpy(p, "MagnetHigh"); p += 10; first = false; }
-            if (flags & SensorState::ERR_MAGNET_LOW) { if (!first) { *p++ = ','; *p++ = ' '; } strcpy(p, "MagnetLow"); p += 9; first = false; }
-            if (flags & SensorState::ERR_MAGNET_MISSING) { if (!first) { *p++ = ','; *p++ = ' '; } strcpy(p, "MagnetMissing"); p += 13; first = false; }
-            if (flags & SensorState::ERR_I2C_WATCHDOG) { if (!first) { *p++ = ','; *p++ = ' '; } strcpy(p, "I2CWatchdog"); p += 11; first = false; }
-            if (flags & SensorState::ERR_DESYNC) { if (!first) { *p++ = ','; *p++ = ' '; } strcpy(p, "Desync"); p += 6; first = false; }
-            if (flags & SensorState::ERR_RECOVERY_DESYNC) { if (!first) { *p++ = ','; *p++ = ' '; } strcpy(p, "RecDesync"); p += 9; first = false; }
+            if (flags & SensorState::ERR_MAGNET_HIGH)
+            {
+                strcpy(p, "MagnetHigh");
+                p += 10;
+                first = false;
+            }
+            if (flags & SensorState::ERR_MAGNET_LOW)
+            {
+                if (!first)
+                {
+                    *p++ = ',';
+                    *p++ = ' ';
+                }
+                strcpy(p, "MagnetLow");
+                p += 9;
+                first = false;
+            }
+            if (flags & SensorState::ERR_MAGNET_MISSING)
+            {
+                if (!first)
+                {
+                    *p++ = ',';
+                    *p++ = ' ';
+                }
+                strcpy(p, "MagnetMissing");
+                p += 13;
+                first = false;
+            }
+            if (flags & SensorState::ERR_I2C_WATCHDOG)
+            {
+                if (!first)
+                {
+                    *p++ = ',';
+                    *p++ = ' ';
+                }
+                strcpy(p, "I2CWatchdog");
+                p += 11;
+                first = false;
+            }
+            if (flags & SensorState::ERR_DESYNC)
+            {
+                if (!first)
+                {
+                    *p++ = ',';
+                    *p++ = ' ';
+                }
+                strcpy(p, "Desync");
+                p += 6;
+                first = false;
+            }
+            if (flags & SensorState::ERR_RECOVERY_DESYNC)
+            {
+                if (!first)
+                {
+                    *p++ = ',';
+                    *p++ = ' ';
+                }
+                strcpy(p, "RecDesync");
+                p += 9;
+                first = false;
+            }
             strcpy(p, ")\r\n");
         }
         cdc_print(buf);
     }
 
-    void cmd_status() {
-        if (!g_state) {
+    void cmd_status()
+    {
+        if (!g_state)
+        {
             cdc_print("ERR: No state\r\n");
             return;
         }
 
         char buf[128];
-        char* p;
+        char *p;
 
         cdc_print("=== LIVE STATUS ===\r\n");
 
-        p = buf; strcpy(p, "Position: "); p += 10;
+        p = buf;
+        strcpy(p, "Position: ");
+        p += 10;
         p = int_to_str(g_state->sensor.wheel_position.load(), p);
         strcpy(p, "\r\n");
         cdc_print(buf);
 
         int32_t vel_cps = g_state->sensor.wheel_velocity.load();
-        p = buf; strcpy(p, "Velocity (cps): "); p += 16;
+        p = buf;
+        strcpy(p, "Velocity (cps): ");
+        p += 16;
         p = int_to_str(vel_cps, p);
         strcpy(p, "\r\n");
         cdc_print(buf);
 
-        p = buf; strcpy(p, "Buttons: 0x"); p += 11;
+        p = buf;
+        strcpy(p, "Buttons: 0x");
+        p += 11;
         uint16_t btns = g_state->buttons.load();
         const char hex[] = "0123456789ABCDEF";
         *p++ = hex[(btns >> 12) & 0xF];
@@ -286,12 +400,16 @@ namespace {
         strcpy(p, "\r\n");
         cdc_print(buf);
 
-        p = buf; strcpy(p, "Accel: "); p += 7;
+        p = buf;
+        strcpy(p, "Accel: ");
+        p += 7;
         p = int_to_str(g_state->pedal_accel.load(), p);
         strcpy(p, "\r\n");
         cdc_print(buf);
 
-        p = buf; strcpy(p, "Brake: "); p += 7;
+        p = buf;
+        strcpy(p, "Brake: ");
+        p += 7;
         p = int_to_str(g_state->pedal_brake.load(), p);
         strcpy(p, "\r\n");
         cdc_print(buf);
@@ -299,18 +417,24 @@ namespace {
         uint8_t flags = g_state->sensor.error_flags.load();
         print_error_flags(flags);
 
-        p = buf; strcpy(p, "LED status: "); p += 12;
+        p = buf;
+        strcpy(p, "LED status: ");
+        p += 12;
         p = uint_to_str(static_cast<uint8_t>(g_state->led_status.get()), p);
         strcpy(p, "\r\n");
         cdc_print(buf);
 
         uint8_t err_count = (g_error_log_write_idx - g_error_log_read_idx + ERROR_LOG_SIZE) % ERROR_LOG_SIZE;
-        p = buf; strcpy(p, "Logged errors: "); p += 15;
+        p = buf;
+        strcpy(p, "Logged errors: ");
+        p += 15;
         p = uint_to_str(err_count, p);
         strcpy(p, "\r\n");
         cdc_print(buf);
 
-        p = buf; strcpy(p, "Loop time (EMA): "); p += 17;
+        p = buf;
+        strcpy(p, "Loop time (EMA): ");
+        p += 17;
         p = uint_to_str(g_state->loop_time_avg_us.load(), p);
         strcpy(p, " us\r\n");
         cdc_print(buf);
@@ -320,8 +444,10 @@ namespace {
 
         // Poll for completion (timeout after 10ms)
         uint64_t start = time_us_64();
-        while (g_state->request_agc_read.load()) {
-            if (time_us_64() - start > 10000) {
+        while (g_state->request_agc_read.load())
+        {
+            if (time_us_64() - start > 10000)
+            {
                 cdc_print("AGC: timeout\r\n");
                 g_state->request_agc_read.store(false);
                 return;
@@ -329,7 +455,9 @@ namespace {
             tud_task(); // Keep USB alive while waiting
         }
 
-        p = buf; strcpy(p, "AGC: "); p += 5;
+        p = buf;
+        strcpy(p, "AGC: ");
+        p += 5;
         p = uint_to_str(g_state->sensor.agc_value.load(), p);
         strcpy(p, "\r\n");
         cdc_print(buf);
@@ -339,25 +467,38 @@ namespace {
     // Command: Print and clear error log
     // =========================================================================
 
-    const char* error_name(SystemStatus code) {
-        switch (code) {
-            case SystemStatus::FlashCalMissing: return "FlashCalMissing";
-            case SystemStatus::MagnetHigh:      return "MagnetHigh";
-            case SystemStatus::MagnetLow:       return "MagnetLow";
-            case SystemStatus::MagnetMissing:   return "MagnetMissing";
-            case SystemStatus::I2CWatchdogFired:return "I2CWatchdog";
-            case SystemStatus::EncoderDesync:   return "Desync";
-            case SystemStatus::DesyncAfterRecovery: return "RecoveryDesync";
-            case SystemStatus::FlashWriteFailed:return "FlashWriteFailed";
-            default: return "Unknown";
+    const char *error_name(SystemStatus code)
+    {
+        switch (code)
+        {
+        case SystemStatus::FlashCalMissing:
+            return "FlashCalMissing";
+        case SystemStatus::MagnetHigh:
+            return "MagnetHigh";
+        case SystemStatus::MagnetLow:
+            return "MagnetLow";
+        case SystemStatus::MagnetMissing:
+            return "MagnetMissing";
+        case SystemStatus::I2CWatchdogFired:
+            return "I2CWatchdog";
+        case SystemStatus::EncoderDesync:
+            return "Desync";
+        case SystemStatus::DesyncAfterRecovery:
+            return "RecoveryDesync";
+        case SystemStatus::FlashWriteFailed:
+            return "FlashWriteFailed";
+        default:
+            return "Unknown";
         }
     }
 
-    void cmd_errors() {
+    void cmd_errors()
+    {
         uint8_t write_idx = g_error_log_write_idx;
         uint8_t read_idx = g_error_log_read_idx;
 
-        if (read_idx == write_idx) {
+        if (read_idx == write_idx)
+        {
             cdc_print("=== ERROR LOG: Empty ===\r\n");
             return;
         }
@@ -365,19 +506,24 @@ namespace {
         cdc_print("=== ERROR LOG ===\r\n");
 
         char buf[64];
-        char* p;
+        char *p;
         int count = 0;
 
-        while (read_idx != write_idx && count < ERROR_LOG_SIZE) {
-            ErrorLogEntry& e = g_error_log[read_idx];
+        while (read_idx != write_idx && count < ERROR_LOG_SIZE)
+        {
+            ErrorLogEntry &e = g_error_log[read_idx];
             p = buf;
             *p++ = '[';
-            p = uint_to_str(static_cast<uint32_t>(e.timestamp_us / 1000), p);  // uint to avoid sign wrap after 24d
-            strcpy(p, "ms | Code "); p += 10;
+            p = uint_to_str(static_cast<uint32_t>(e.timestamp_us / 1000), p); // uint to avoid sign wrap after 24d
+            strcpy(p, "ms | Code ");
+            p += 10;
             p = uint_to_str(static_cast<uint8_t>(e.error_code), p);
-            strcpy(p, " ("); p += 2;
-            strcpy(p, error_name(e.error_code)); p += strlen(error_name(e.error_code));
-            strcpy(p, ")\r\n"); p += 3;
+            strcpy(p, " (");
+            p += 2;
+            strcpy(p, error_name(e.error_code));
+            p += strlen(error_name(e.error_code));
+            strcpy(p, ")\r\n");
+            p += 3;
             cdc_print(buf);
 
             read_idx = (read_idx + 1) % ERROR_LOG_SIZE;
@@ -387,7 +533,9 @@ namespace {
         // Clear the log
         g_error_log_read_idx = write_idx;
 
-        p = buf; strcpy(p, "Total: "); p += 7;
+        p = buf;
+        strcpy(p, "Total: ");
+        p += 7;
         p = int_to_str(count, p);
         strcpy(p, " entries (cleared)\r\n");
         cdc_print(buf);
@@ -397,7 +545,8 @@ namespace {
     // Command Parser
     // =========================================================================
 
-    void print_help() {
+    void print_help()
+    {
         cdc_print("Commands:\r\n");
         cdc_print("  s   - Print live status\r\n");
         cdc_print("  c   - Print live calibration data\r\n");
@@ -407,78 +556,107 @@ namespace {
         cdc_print("        cs <lut> <idx> <val> - Set LUT value (lut: cwl, ccl; idx: 0-4)\r\n");
         cdc_print("        cs amin/amax <val>   - Set accelerator min/max\r\n");
         cdc_print("        cs bmin/bmax <val>   - Set brake min/max\r\n");
-        cdc_print("        cs cwz/ccz <val>     - Set CW/CCW zero PWM\r\n");
-        cdc_print("        cs center <val>      - Set wheel center offset\r\n");
+        cdc_print("        cs cwz/ccz <val>     - Set CW/CCW zero PWM (0-6249)\r\n");
+        cdc_print("        cs center <val>      - Set wheel center offset (0 - 4096)\r\n");
         cdc_print("        cs angle <val>       - Set max wheel angle (>=180)\r\n");
         cdc_print("        cs damper <val>      - Set system damper (0-10000)\r\n");
-        cdc_print("        cs maxpwm <val>      - Set forward max PWM (0-6249)\r\n");
         cdc_print("        cs scale <val>       - Set force scale %\r\n");
         cdc_print("        cs friction <val>    - Set friction fade force (0-10000)\r\n");
         cdc_print("  help - Print this help\r\n");
     }
 
-    void cmd_cs(int argc, char** argv) {
-        if (argc < 3) {
+    void cmd_cs(int argc, char **argv)
+    {
+        if (argc < 3)
+        {
             cdc_print("ERR: Usage: cs <var> <val>\r\n");
             print_help();
             return;
         }
-        const char* var = argv[1];
-        if (strcmp(var, "cwl") == 0 || strcmp(var, "ccl") == 0) {
-            if (argc == 4) {
+        const char *var = argv[1];
+        if (strcmp(var, "cwl") == 0 || strcmp(var, "ccl") == 0)
+        {
+            if (argc == 4)
+            {
                 int idx = atoi(argv[2]);
                 int32_t val = atoi(argv[3]);
-                if (idx >= 0 && idx < CAL_FORCE_LEVEL_COUNT) {
-                    if (strcmp(var, "cwl") == 0) g_state->cal_state.cw_speed[idx].store(val);
-                    else g_state->cal_state.ccw_speed[idx].store(val);
+                if (idx >= 0 && idx < CAL_FORCE_LEVEL_COUNT)
+                {
+                    if (strcmp(var, "cwl") == 0)
+                        g_state->cal_state.cw_speed_lut[idx].store(val);
+                    else
+                        g_state->cal_state.ccw_speed_lut[idx].store(val);
                     cdc_print("LUT updated.\r\n");
                     // Signal Core 1 to re-apply the new calibration values
                     g_state->calibration_reload.store(true);
-                } else {
+                }
+                else
+                {
                     cdc_print("ERR: Invalid index\r\n");
                 }
-            } else {
+            }
+            else
+            {
                 cdc_print("ERR: Usage: cs <lut> <idx> <val>\r\n");
                 print_help();
             }
-        } else {
+        }
+        else
+        {
             int32_t val = atoi(argv[2]);
-            if (strcmp(var, "amin") == 0 || strcmp(var, "amax") == 0 || 
-                    strcmp(var, "bmin") == 0 || strcmp(var, "bmax") == 0) {
-                
-                if (val < 0 || val > 4095) {
+            if (strcmp(var, "amin") == 0 || strcmp(var, "amax") == 0 ||
+                strcmp(var, "bmin") == 0 || strcmp(var, "bmax") == 0)
+            {
+
+                if (val < 0 || val > 4095)
+                {
                     cdc_print("ERR: Value must be 0 to 4095\r\n");
                     return;
                 }
 
-                if (strcmp(var, "amin") == 0) g_state->cal_state.accel_min.store(val);
-                else if (strcmp(var, "amax") == 0) g_state->cal_state.accel_max.store(val);
-                else if (strcmp(var, "bmin") == 0) g_state->cal_state.brake_min.store(val);
-                else if (strcmp(var, "bmax") == 0) g_state->cal_state.brake_max.store(val);
+                if (strcmp(var, "amin") == 0)
+                    g_state->cal_state.accel_min.store(val);
+                else if (strcmp(var, "amax") == 0)
+                    g_state->cal_state.accel_max.store(val);
+                else if (strcmp(var, "bmin") == 0)
+                    g_state->cal_state.brake_min.store(val);
+                else if (strcmp(var, "bmax") == 0)
+                    g_state->cal_state.brake_max.store(val);
                 g_pedals->apply_calibration(g_state->cal_state);
-            } else {
-                if (strcmp(var, "cwz") == 0) {
-                    if (val < 0 || val > g_state->cal_state.forward_max_pwm.load()) {
-                        cdc_print("ERR: maxpwm must be 0 to maxpwm\r\n");
+            }
+            else
+            {
+                if (strcmp(var, "cwz") == 0)
+                {
+                    if (val < 0 || val > PWM_WRAP)
+                    {
+                        cdc_print("ERR: maxpwm must be 0 to 6249\r\n");
                         return;
                     }
                     g_state->cal_state.cw_zero_pwm.store(static_cast<uint16_t>(val));
                 }
-                else if (strcmp(var, "ccz") == 0) {
-                    if (val < 0 || val > g_state->cal_state.forward_max_pwm.load()) {
-                        cdc_print("ERR: maxpwm must be 0 to maxpwm\r\n");
+                else if (strcmp(var, "ccz") == 0)
+                {
+                    if (val < 0 || val > PWM_WRAP)
+                    {
+                        cdc_print("ERR: maxpwm must be 0 to 6249\r\n");
                         return;
                     }
                     g_state->cal_state.ccw_zero_pwm.store(static_cast<uint16_t>(val));
-                } 
-                else if (strcmp(var, "center") == 0) {
-                    if (val < 0 || val > 4095) {
+                }
+                else if (strcmp(var, "center") == 0)
+                {
+                    if (val < 0 || val > 4095)
+                    {
                         cdc_print("ERR: Value must be 0 to 4095\r\n");
                         return;
                     }
                     g_state->cal_state.center_offset.store(val);
-                } else if (strcmp(var, "angle") == 0) {
-                    if (val < 180) {
+                }
+                else if (strcmp(var, "angle") == 0)
+                {
+                    if (val < 180)
+                    {
                         cdc_print("ERR: angle must be >= 180 degrees\r\n");
                         return;
                     }
@@ -486,31 +664,36 @@ namespace {
                     int32_t half_deg = val / 2;
                     int32_t max_half_angle_counts = (half_deg * WHEEL_COUNTS_PER_REV) / 360;
                     g_state->cal_state.max_half_angle_counts.store(max_half_angle_counts);
-                } else if (strcmp(var, "damper") == 0) {
-                    if (val < 0 || val > 10000) {
+                }
+                else if (strcmp(var, "damper") == 0)
+                {
+                    if (val < 0 || val > 10000)
+                    {
                         cdc_print("ERR: damper must be 0 to 10000\r\n");
                         return;
                     }
                     g_state->cal_state.system_damper_strength.store(val);
-                } else if (strcmp(var, "maxpwm") == 0) {
-                    if (val < 0 || val > PWM_WRAP) {
-                        cdc_print("ERR: maxpwm must be 0 to 6249\r\n");
-                        return;
-                    }
-                    g_state->cal_state.forward_max_pwm.store(val);
-                } else if (strcmp(var, "scale") == 0) {
-                    if (val < 0) {
+                }
+                else if (strcmp(var, "scale") == 0)
+                {
+                    if (val < 0)
+                    {
                         cdc_print("ERR: scale must be >= 0\r\n");
                         return;
                     }
                     g_state->cal_state.force_scale_percent.store(val);
-                } else if (strcmp(var, "friction") == 0) {
-                    if (val < 0 || val > 10000) {
+                }
+                else if (strcmp(var, "friction") == 0)
+                {
+                    if (val < 0 || val > 10000)
+                    {
                         cdc_print("ERR: friction must be 0 to 10000\r\n");
                         return;
                     }
                     g_state->cal_state.friction_fade_force.store(val);
-                } else {
+                }
+                else
+                {
                     cdc_print("ERR: Unknown variable\r\n");
                     print_help();
                     return;
@@ -522,37 +705,58 @@ namespace {
         }
     }
 
-    void process_command(char* cmd) {
-        char* argv[5];
+    void process_command(char *cmd)
+    {
+        char *argv[5];
         int argc = 0;
-        char* p = cmd;
-        while (*p) {
-            while (*p == ' ') p++;
-            if (!*p) break;
+        char *p = cmd;
+        while (*p)
+        {
+            while (*p == ' ')
+                p++;
+            if (!*p)
+                break;
             argv[argc++] = p;
-            if (argc >= 5) break;
-            while (*p && *p != ' ') p++;
-            if (*p) {
+            if (argc >= 5)
+                break;
+            while (*p && *p != ' ')
+                p++;
+            if (*p)
+            {
                 *p = '\0';
                 p++;
             }
         }
 
-        if (argc == 0) return;
+        if (argc == 0)
+            return;
 
-        if (strcmp(argv[0], "s") == 0) {
+        if (strcmp(argv[0], "s") == 0)
+        {
             cmd_status();
-        } else if (strcmp(argv[0], "c") == 0) {
+        }
+        else if (strcmp(argv[0], "c") == 0)
+        {
             cmd_calibration();
-        } else if (strcmp(argv[0], "e") == 0) {
+        }
+        else if (strcmp(argv[0], "e") == 0)
+        {
             cmd_errors();
-        } else if (strcmp(argv[0], "help") == 0) {
+        }
+        else if (strcmp(argv[0], "help") == 0)
+        {
             print_help();
-        } else if (strcmp(argv[0], "cw") == 0) {
+        }
+        else if (strcmp(argv[0], "cw") == 0)
+        {
             cmd_save_calibration();
-        } else if (strcmp(argv[0], "cs") == 0) {
+        }
+        else if (strcmp(argv[0], "cs") == 0)
+        {
             cmd_cs(argc, argv);
-        } else {
+        }
+        else
+        {
             cdc_print("ERR: Unknown command.\r\n");
             print_help();
         }
@@ -564,7 +768,8 @@ namespace {
 // Public API
 // =========================================================================
 
-void debug_serial_init(SharedState& state, PedalReader& pedals, FlashStorage& flash) {
+void debug_serial_init(SharedState &state, PedalReader &pedals, FlashStorage &flash)
+{
     g_state = &state;
     g_pedals = &pedals;
     g_flash = &flash;
@@ -573,7 +778,8 @@ void debug_serial_init(SharedState& state, PedalReader& pedals, FlashStorage& fl
     g_error_log_read_idx = 0;
 }
 
-void debug_log_error(SystemStatus error_code) {
+void debug_log_error(SystemStatus error_code)
+{
     uint8_t idx = g_error_log_write_idx;
     uint8_t next_idx = (idx + 1) % ERROR_LOG_SIZE;
 
@@ -588,9 +794,11 @@ void debug_log_error(SystemStatus error_code) {
 // Main update — called from Core 0 main loop
 // =========================================================================
 
-void debug_serial_update() {
+void debug_serial_update()
+{
     bool connected = tud_cdc_connected();
-    if (!connected) {
+    if (!connected)
+    {
         g_prompt_printed = false;
         g_line_len = 0;
         g_escape_state = 0;
@@ -598,32 +806,43 @@ void debug_serial_update() {
         return;
     }
 
-    if (!g_was_connected) {
+    if (!g_was_connected)
+    {
         g_was_connected = true;
         g_connected_timestamp = time_us_64();
     }
 
-    if (!g_prompt_printed) {
+    if (!g_prompt_printed)
+    {
         // Wait 500ms after connection before sending the first prompt
         // to give the host terminal software time to initialize.
-        if (time_us_64() - g_connected_timestamp > 500000) {
+        if (time_us_64() - g_connected_timestamp > 500000)
+        {
             cdc_print("\r\nffbserial: ");
             g_prompt_printed = true;
         }
     }
 
-    if (!tud_cdc_available()) return;
+    if (!tud_cdc_available())
+        return;
 
     char c = (char)tud_cdc_read_char();
 
-    if (g_escape_state == 1) {
-        if (c == '[') g_escape_state = 2;
-        else g_escape_state = 0;
+    if (g_escape_state == 1)
+    {
+        if (c == '[')
+            g_escape_state = 2;
+        else
+            g_escape_state = 0;
         return;
-    } else if (g_escape_state == 2) {
-        if (c == 'A') { // Arrow Up
+    }
+    else if (g_escape_state == 2)
+    {
+        if (c == 'A')
+        { // Arrow Up
             // Clear current line
-            while (g_line_len > 0) {
+            while (g_line_len > 0)
+            {
                 cdc_print("\b \b");
                 g_line_len--;
             }
@@ -635,38 +854,52 @@ void debug_serial_update() {
         }
         g_escape_state = 0;
         return;
-    } else if (c == 0x1B) { // ESC
+    }
+    else if (c == 0x1B)
+    { // ESC
         g_escape_state = 1;
         return;
     }
 
-    if (c == '\r' || c == '\n') {
+    if (c == '\r' || c == '\n')
+    {
         cdc_print("\r\n");
         g_line_buf[g_line_len] = '\0';
-        if (g_line_len > 0) {
+        if (g_line_len > 0)
+        {
             strcpy(g_last_cmd_buf, g_line_buf);
             g_last_cmd_len = g_line_len;
             process_command(g_line_buf);
             g_line_len = 0;
         }
-        if (g_prompt_printed) {
+        if (g_prompt_printed)
+        {
             cdc_print("ffbserial: ");
         }
-    } else if (c == 0x03) { // Ctrl-C
+    }
+    else if (c == 0x03)
+    { // Ctrl-C
         g_line_len = 0;
         cdc_print("^C\r\n");
-        if (g_prompt_printed) {
+        if (g_prompt_printed)
+        {
             cdc_print("ffbserial: ");
         }
-    } else if (c == '\b' || c == 0x7F) { // Backspace or DEL
-        if (g_line_len > 0) {
+    }
+    else if (c == '\b' || c == 0x7F)
+    { // Backspace or DEL
+        if (g_line_len > 0)
+        {
             g_line_len--;
             cdc_print("\b \b");
         }
-    } else if (g_line_len < sizeof(g_line_buf) - 1) {
+    }
+    else if (g_line_len < sizeof(g_line_buf) - 1)
+    {
         // Allow alphanumeric, space, minus
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || 
-            (c >= '0' && c <= '9') || c == ' ' || c == '-') {
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || c == ' ' || c == '-')
+        {
             g_line_buf[g_line_len++] = c;
             char echo[2] = {c, '\0'};
             cdc_print(echo);
