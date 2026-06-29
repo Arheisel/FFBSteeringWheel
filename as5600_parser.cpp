@@ -111,7 +111,7 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle, bool is_recove
         // Calculate instantaneous velocity to check for physically impossible jumps
         // CRITICAL: dt_us must be cast to int64_t. Otherwise, dividing a negative int64_t
         // by a uint64_t promotes the negative number to a massive positive uint64_t!
-        int32_t inst_velocity_cps = static_cast<int32_t>((static_cast<int64_t>(delta) * 1000000) / static_cast<int64_t>(dt_us));
+        int32_t inst_velocity_cps = (delta * 1000000) / static_cast<int32_t>(dt_us);
 
         // ---- Filter Impossible Physics Jumps ----
         if (inst_velocity_cps > MAX_PHYSICAL_DELTA_CPS || inst_velocity_cps < -MAX_PHYSICAL_DELTA_CPS)
