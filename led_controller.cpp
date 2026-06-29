@@ -33,7 +33,7 @@ void LEDController::sleep_ms(uint32_t ms)
 
 void LEDController::update()
 {
-    uint64_t now = time_us_64();
+    uint32_t now = time_us_32();
 
     // Read current status code
     uint8_t code = 0;

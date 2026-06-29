@@ -87,7 +87,7 @@ int main()
         g_shared_state.led_status.clear(SystemStatus::RapidFlash);
     }
 
-    uint64_t press_time_us = 0;
+    uint32_t press_time_us = 0;
     bool long_press = false;
     int num_pressed = 0;
 
@@ -101,9 +101,9 @@ int main()
         {
             if (press_time_us == 0)
             {
-                press_time_us = time_us_64();
+                press_time_us = time_us_32();
             }
-            else if ((time_us_64() - press_time_us) / 1000 > LONG_PRESS_MS)
+            else if ((time_us_32() - press_time_us) > LONG_PRESS_US)
             {
                 long_press = true;
                 num_pressed = __builtin_popcount(buttons_state);
@@ -154,10 +154,10 @@ int main()
     // Init TinyUSB
     tusb_init();
 
-    uint64_t last_usb_report_time_us = 0;
-    uint64_t last_pedal_read_time_us = 0;
-    uint64_t last_button_read_time_us = 0;
-    uint64_t last_led_update_time_us = 0;
+    uint32_t last_usb_report_time_us = 0;
+    uint32_t last_pedal_read_time_us = 0;
+    uint32_t last_button_read_time_us = 0;
+    uint32_t last_led_update_time_us = 0;
 
     // Main Loop
     while (true)
@@ -169,7 +169,7 @@ int main()
         // Debug serial commands
         debug_serial_update();
 
-        uint64_t now_us = time_us_64();
+        uint32_t now_us = time_us_32();
 
         // Read pedals at PEDAL_UPDATE_INTERVAL_US (0.5ms)
         if (now_us - last_pedal_read_time_us >= PEDAL_UPDATE_INTERVAL_US)

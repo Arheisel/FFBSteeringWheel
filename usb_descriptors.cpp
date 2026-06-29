@@ -7,11 +7,12 @@
 // existing PID descriptor from usb_ffb_descriptors.h.
 // =========================================================================
 
+#include <cstring>
 #include "tusb.h"
 #include "bsp/board_api.h"
+#include "hid_device.h"
 #include "config.h"
 #include "usb_ffb_descriptors.h"
-#include <cstring>
 
 #define EPNUM_HID         0x81
 #define EPNUM_CDC_NOTIF   0x82

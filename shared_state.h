@@ -45,7 +45,7 @@ struct EffectSlot {
 
     // Runtime state
     uint8_t  state;                // 0=free, 1=allocated, 2=playing
-    uint64_t start_time_us;        // Timestamp when effect started playing
+    uint32_t start_time_us;        // Timestamp when effect started playing
     uint8_t  loop_count;           // Remaining loops (0xFF = infinite)
 
     static constexpr uint8_t STATE_FREE      = 0;

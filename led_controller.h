@@ -20,7 +20,7 @@ private:
     };
 
     FlashPhase phase_ = FlashPhase::IDLE;
-    uint64_t phase_start_us_ = 0;
+    uint32_t phase_start_us_ = 0;
     uint8_t flash_count_ = 0;  // Number of flashes in current code
     uint8_t flashes_done_ = 0; // How many flashes completed so far
     uint8_t current_code_ = 0; // Currently displaying code

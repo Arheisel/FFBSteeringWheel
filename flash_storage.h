@@ -4,7 +4,7 @@
 #include "shared_state.h"
 #include "hardware/flash.h"
 
-#define MAGIC_NUMBER 0xFEEDFACE
+#define MAGIC_NUMBER 0xDECAFBAD
 #define FLASH_DATA_VERSION 1
 
 class FlashStorage

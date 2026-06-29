@@ -20,7 +20,7 @@ void AS5600Parser::init()
     last_raw_angle_ = 0;
     first_read_ = true;
     error_flags_ = 0;
-    last_time_us_ = time_us_64();
+    last_time_us_ = time_us_32();
 }
 
 bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle, bool is_recovery)
@@ -56,7 +56,7 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle, bool is_recove
     // Mask to 12 bits (0..4095)
     raw_angle &= 0x0FFF;
 
-    uint64_t now = time_us_64();
+    uint32_t now = time_us_32();
 
     if (first_read_)
     {
@@ -86,7 +86,7 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle, bool is_recove
     }
 
     // Compute raw delta and check for wraps
-    uint64_t dt_us = now - last_time_us_;
+    uint32_t dt_us = now - last_time_us_;
     if (dt_us == 0)
         dt_us = 1; // Prevent division by zero
 

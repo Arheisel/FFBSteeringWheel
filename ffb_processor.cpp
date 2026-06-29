@@ -109,7 +109,7 @@ int16_t FFBProcessor::calculate(int32_t position, int32_t velocity, EffectState 
     }
 
     // ---- Accumulate forces from all active effects ----
-    uint64_t now = time_us_64();
+    uint32_t now = time_us_32();
     int32_t total_force = 0;
     int32_t scaled_pos = (position * 10000) / max_half_angle_counts_;
     int32_t scaled_vel = (velocity * 10000) / MAX_SAFE_VELOCITY_CPS;
@@ -128,7 +128,7 @@ int16_t FFBProcessor::calculate(int32_t position, int32_t velocity, EffectState 
             continue;
 
         // Calculate elapsed time in ms
-        uint32_t elapsed_ms = static_cast<uint32_t>((now - e.start_time_us) / 1000);
+        uint32_t elapsed_ms = (now - e.start_time_us) / 1000;
 
         // Check duration (0xFFFF, 0x7FFF, or 0 = infinite)
         uint16_t duration = e.params.duration;

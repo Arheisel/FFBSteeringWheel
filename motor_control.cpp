@@ -44,6 +44,7 @@ void MotorControl::init()
     gpio_put(PIN_PWM_EN, 0); // Disable initially
 
     last_active_dir_ = Direction::OFF;
+    last_stall_time_us_ = time_us_32();
 }
 
 void MotorControl::apply_calibration(const CalibrationState &cal_state)
@@ -143,7 +144,8 @@ uint16_t MotorControl::get_safe_max_pwm(int32_t velocity)
     }
     else
     {
-        max_allowed_pwm = static_cast<uint16_t>(CONT_STALL_PWM + (static_cast<int64_t>(remaining_peak_time_us_) * (PEAK_STALL_PWM - CONT_STALL_PWM)) / PEAK_FALLOFF_TIME_US);
+        max_allowed_pwm = static_cast<uint16_t>(CONT_STALL_PWM 
+            + (static_cast<int64_t>(remaining_peak_time_us_) * (PEAK_STALL_PWM - CONT_STALL_PWM)) / PEAK_FALLOFF_TIME_US);
     }
 
     // --- Hardware Safety: Max Velocity Fading (Protection Envelope) ---
@@ -170,32 +172,30 @@ uint16_t MotorControl::get_safe_max_pwm(int32_t velocity)
 
 void MotorControl::update_stall_time(uint16_t pwm)
 {
-    uint64_t now = time_us_64();
-    int32_t elapsed_us = static_cast<int32_t>(now - last_stall_time_us_);
+    uint32_t now = time_us_32();
+    uint32_t elapsed_us = now - last_stall_time_us_;
     last_stall_time_us_ = now;
-
-    // Quick and dirty error check
-    if (elapsed_us < 0) return;
 
     if (pwm <= CONT_STALL_PWM)
     {
         if (remaining_peak_time_us_ == PEAK_FALLOFF_TIME_US)
             return;
 
-        remaining_peak_time_us_ += elapsed_us / PEAK_RECOVERY_PENALTY;
-
-        if (remaining_peak_time_us_ > PEAK_FALLOFF_TIME_US || remaining_peak_time_us_ < 0)
+        if (__builtin_add_overflow(remaining_peak_time_us_, elapsed_us / PEAK_RECOVERY_PENALTY, &remaining_peak_time_us_) 
+            || remaining_peak_time_us_ > PEAK_FALLOFF_TIME_US)
+        {
             remaining_peak_time_us_ = PEAK_FALLOFF_TIME_US;
+        }
     }
     else
     {
         if (remaining_peak_time_us_ == 0)
             return;
 
-        remaining_peak_time_us_ -= elapsed_us;
-
-        if (remaining_peak_time_us_ < 0)
+        if (__builtin_sub_overflow(remaining_peak_time_us_, elapsed_us, &remaining_peak_time_us_))
+        {
             remaining_peak_time_us_ = 0;
+        }
     }
 }
 

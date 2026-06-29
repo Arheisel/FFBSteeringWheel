@@ -36,7 +36,7 @@ private:
     int32_t velocity_cps_ = 0;          // Raw instantaneous counts/sec (used for dead-reckoning)
     int32_t filtered_velocity_cps_ = 0; // EMA-smoothed counts/sec (used by motor governor)
     uint8_t zero_count_ = 0;            // Consecutive zero-velocity reads
-    uint64_t last_time_us_ = 0;
+    uint32_t last_time_us_ = 0;
 
     // Error state
     uint8_t error_flags_ = 0;

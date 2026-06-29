@@ -49,12 +49,12 @@ constexpr uint16_t DEFAULT_MAX_WHEEL_ANGLE_DEG = 1800;
 // CALIBRATION & PHYSICS TUNING
 // =========================================================================
 
-constexpr uint32_t LONG_PRESS_MS         = 5000;    // Hold > 5s for Flash cal
+constexpr uint32_t LONG_PRESS_US         = 5000000; // Hold > 5s for Flash cal
 
 // Overpower Detection
 constexpr int32_t DYNAMIC_DAMPING_FACTOR = 50;      // Tuning parameter for overpower opposition
 // Increased margin from 2000 to 8000 to prevent closed-loop oscillation caused by imperfect LUTs
-constexpr int32_t VELOCITY_MARGIN_CPS        = 2000;       // Safety margin (counts/sec) for imperfect LUT readings
+constexpr int32_t VELOCITY_MARGIN_CPS    = 2000;       // Safety margin (counts/sec) for imperfect LUT readings
 
 // Force levels for speed LUT calibration sweeps (raw -10000 to +10000 scale)
 // Scaled to stay under the 140 RPM speed limiter (to get an accurate curve)
@@ -67,9 +67,12 @@ constexpr int32_t  CAL_FORCE_LEVELS[]    = {
 };
 constexpr uint8_t  CAL_FORCE_LEVEL_COUNT = sizeof(CAL_FORCE_LEVELS) / sizeof(CAL_FORCE_LEVELS[0]);
 
-// Minimum sweep distance during calibration
-constexpr int16_t  CAL_ZERO_MIN_SWEEP_COUNTS  = WHEEL_COUNTS_PER_REV / 16;
-constexpr int16_t  CAL_FORCE_MIN_SWEEP_COUNTS  = WHEEL_COUNTS_PER_REV;
+// Timeouts and Minimum sweep distance during calibration
+constexpr uint32_t CAL_I2C_TIMEOUT_US    = 5000;
+constexpr uint32_t CAL_SWEEP_TIMEOUT_US  = 10000000;
+constexpr uint32_t CAL_SETTLE_TIMEOUT_US = 5000000;
+constexpr int16_t  CAL_ZERO_MIN_SWEEP_COUNTS = WHEEL_COUNTS_PER_REV / 16;
+constexpr int16_t  CAL_FORCE_MIN_SWEEP_COUNTS = WHEEL_COUNTS_PER_REV;
 
 // =========================================================================
 // MOTOR CONFIGURATION
@@ -96,8 +99,8 @@ constexpr uint16_t DEAD_TIME_US             = 50;
 // Tuned for 12V 775 DC motor to limit current to a maximum of 15A
 constexpr uint16_t PEAK_STALL_PWM           = 3749;  // ~60% duty cycle
 constexpr uint16_t CONT_STALL_PWM           = 1874;  // ~30% duty cycle
-constexpr int32_t PEAK_FALLOFF_TIME_US      = 10000000; // 10s
-constexpr int32_t PEAK_RECOVERY_PENALTY     = 3;
+constexpr uint32_t PEAK_FALLOFF_TIME_US      = 10000000; // 10s
+constexpr uint32_t PEAK_RECOVERY_PENALTY     = 3;
 
 // =========================================================================
 // PROTECTION ENVELOPE (Speed Limiter)

@@ -6,12 +6,14 @@
 // Routes parsed effects into the shared EffectState for Core 1.
 // =========================================================================
 
+#include <cstring>
 #include "usb_hid.h"
 #include "tusb.h"
+#include "hid_device.h"
+#include "pico/time.h"
 #include "config.h"
 #include "usb_ffb_descriptors.h"
 #include "shared_state.h"
-#include <cstring>
 
 static void send_pid_status(uint8_t effect_idx, bool playing);
 
@@ -349,7 +351,7 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
             {
             case 1: // Start
                 g_state->ffb.effects[idx].state = EffectSlot::STATE_PLAYING;
-                g_state->ffb.effects[idx].start_time_us = time_us_64();
+                g_state->ffb.effects[idx].start_time_us = time_us_32();
                 g_state->ffb.effects[idx].loop_count = data->loopCount;
                 break;
             case 2: // Start Solo — stop all others first
@@ -361,7 +363,7 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
                     }
                 }
                 g_state->ffb.effects[idx].state = EffectSlot::STATE_PLAYING;
-                g_state->ffb.effects[idx].start_time_us = time_us_64();
+                g_state->ffb.effects[idx].start_time_us = time_us_32();
                 g_state->ffb.effects[idx].loop_count = data->loopCount;
                 break;
             case 3: // Stop

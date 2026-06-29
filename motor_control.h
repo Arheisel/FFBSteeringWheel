@@ -42,10 +42,10 @@ private:
     uint16_t dynamic_force_ = 10000 - friction_fade_force_;
 
     Direction last_active_dir_ = Direction::OFF;
-    uint64_t last_stall_time_us_ = 0;   
-    int32_t remaining_peak_time_us_ = PEAK_FALLOFF_TIME_US;
+    uint32_t last_stall_time_us_ = 0;   
+    uint32_t remaining_peak_time_us_ = PEAK_FALLOFF_TIME_US;
 
-    // Applies the hardware limits for the current speed
+    // Gets the hardware limits for the current speed
     uint16_t get_safe_max_pwm(int32_t velocity);
 
     void update_stall_time(uint16_t pwm);

@@ -31,9 +31,10 @@ namespace {
     bool block_read_sensor(SystemContext& context, uint8_t retries = 0) {
         context.i2c.start_read();
         // Wait for DMA completion with timeout (10ms — well above the ~0.3ms I2C transfer)
-        uint64_t deadline = time_us_64() + 5000;
+        uint32_t start_time = time_us_32();
+
         while (!context.i2c.handle_isr()) {
-            if (time_us_64() > deadline) {
+            if ((time_us_32() - start_time) > CAL_I2C_TIMEOUT_US) {
                 if (retries < 5) {
                     context.i2c.reset_bus();
                     return block_read_sensor(context, retries + 1);
@@ -94,8 +95,8 @@ namespace {
         
         context.motor.brake();
         // Wait for wheel to settle
-        uint64_t settle_start = time_us_64();
-        while (time_us_64() - settle_start < 1000000) {
+        uint32_t settle_start = time_us_32();
+        while (time_us_32() - settle_start < CAL_SETTLE_TIMEOUT_US) {
             block_read_sensor(context);
             if (context.parser.get_velocity() == 0) break;
             context.led.sleep_ms(10);
@@ -114,10 +115,10 @@ namespace {
         
         // Sweep for up to 500ms or until we travel MIN_SWEEP_COUNTS
         int32_t start_pos = context.parser.get_position();
-        uint64_t start_time = time_us_64();
+        uint32_t start_time = time_us_32();
         
         while (true) {
-            if (time_us_64() - start_time > 5000000) break; // 5s timeout
+            if (time_us_32() - start_time > CAL_SWEEP_TIMEOUT_US) break;
 
             context.led.sleep_ms(2); // ~500Hz sampling
             if (!block_read_sensor(context)) continue;
@@ -143,8 +144,8 @@ namespace {
         
         context.motor.brake();
         // Wait for wheel to settle
-        uint64_t settle_start = time_us_64();
-        while (time_us_64() - settle_start < 2000000) {
+        uint32_t settle_start = time_us_32();
+        while (time_us_32() - settle_start < CAL_SETTLE_TIMEOUT_US) {
             block_read_sensor(context);
             if (context.parser.get_velocity() == 0) break;
             context.led.sleep_ms(10);
@@ -219,7 +220,7 @@ namespace {
             sleep_us(BUTTON_UPDATE_INTERVAL_US);
         }
 
-        uint64_t press_time_us = 0;
+        uint32_t press_time_us = 0;
         bool save_triggered = false;
         
         while (!save_triggered) {
@@ -239,8 +240,8 @@ namespace {
 
             if (buttons.get_buttons() != 0) {
                 if (press_time_us == 0) {
-                    press_time_us = time_us_64();
-                } else if ((time_us_64() - press_time_us) / 1000 > LONG_PRESS_MS) {
+                    press_time_us = time_us_32();
+                } else if ((time_us_32() - press_time_us) > LONG_PRESS_US) {
                     save_triggered = true;
                 }
             } else {

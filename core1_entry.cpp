@@ -37,7 +37,7 @@ namespace
     alarm_id_t g_timer_alarm;
 
     // Watchdog tracking
-    volatile uint64_t g_last_loop_time_us = 0;
+    volatile uint32_t g_last_loop_time_us = 0;
 
     // Transient EMI tolerance counter (file scope so both branches can access it)
     uint8_t g_magnet_error_count = 0;
@@ -62,8 +62,7 @@ namespace
         if (!g_i2c.handle_isr())
             return; // Not our interrupt
 
-        uint32_t start_time = time_us_32();
-        g_last_loop_time_us = time_us_64();
+        g_last_loop_time_us = time_us_32();
         const uint8_t *raw_data = g_i2c.get_data();
 
         uint8_t status = raw_data[0];
@@ -161,17 +160,17 @@ namespace
             g_state->request_agc_read.store(false);
         }
 
-        uint32_t duration = time_us_32() - start_time;
+        uint32_t exec_duration = time_us_32() - g_last_loop_time_us;
 
         // Exponential Moving Average (alpha = 1/16)
         static uint32_t loop_time_ema_scaled = 0;
         if (loop_time_ema_scaled == 0)
         {
-            loop_time_ema_scaled = duration << 4;
+            loop_time_ema_scaled = exec_duration << 4;
         }
         else
         {
-            loop_time_ema_scaled = loop_time_ema_scaled - (loop_time_ema_scaled >> 4) + duration;
+            loop_time_ema_scaled = loop_time_ema_scaled - (loop_time_ema_scaled >> 4) + exec_duration;
         }
         g_state->loop_time_avg_us.store(loop_time_ema_scaled >> 4, std::memory_order_relaxed);
     }
@@ -237,7 +236,7 @@ void core1_main()
     core1_init_interrupts();
     multicore_lockout_victim_init();
 
-    g_last_loop_time_us = time_us_64();
+    g_last_loop_time_us = time_us_32();
 
     // Start the 1ms repeating alarm
     g_timer_alarm = alarm_pool_add_alarm_in_us(g_alarm_pool, I2C_READ_INTERVAL_US, timer_callback, nullptr, true);
@@ -250,18 +249,7 @@ void core1_main()
     while (true)
     {
 
-        uint64_t now = time_us_64();
-
-        // Safely read the 64-bit variable that is updated by the DMA ISR.
-        // On a 32-bit core, a 64-bit read takes two instructions and can be interrupted,
-        // leading to a torn read (e.g., crossing a 32-bit wrap boundary).
-        uint64_t last_loop;
-        do
-        {
-            last_loop = g_last_loop_time_us;
-        } while (last_loop != g_last_loop_time_us);
-
-        if (now - last_loop > I2C_WATCHDOG_TIMEOUT_US)
+        if (time_us_32() - g_last_loop_time_us > I2C_WATCHDOG_TIMEOUT_US)
         {
 
             debug_log_error(SystemStatus::I2CWatchdogFired);

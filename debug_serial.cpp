@@ -443,10 +443,10 @@ namespace
         g_state->request_agc_read.store(true);
 
         // Poll for completion (timeout after 10ms)
-        uint64_t start = time_us_64();
+        uint32_t start = time_us_32();
         while (g_state->request_agc_read.load())
         {
-            if (time_us_64() - start > 10000)
+            if (time_us_32() - start > 10000)
             {
                 cdc_print("AGC: timeout\r\n");
                 g_state->request_agc_read.store(false);
