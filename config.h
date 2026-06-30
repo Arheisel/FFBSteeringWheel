@@ -49,7 +49,7 @@ constexpr uint16_t DEFAULT_MAX_WHEEL_ANGLE_DEG = 1800;
 // CALIBRATION & PHYSICS TUNING
 // =========================================================================
 
-constexpr uint32_t LONG_PRESS_US         = 5000000; // Hold > 5s for Flash cal
+constexpr uint32_t LONG_PRESS_US         = 5'000'000; // Hold > 5s for Flash cal
 
 // Overpower Detection
 constexpr int32_t DYNAMIC_DAMPING_FACTOR = 50;      // Tuning parameter for overpower opposition
@@ -69,8 +69,8 @@ constexpr uint8_t  CAL_FORCE_LEVEL_COUNT = sizeof(CAL_FORCE_LEVELS) / sizeof(CAL
 
 // Timeouts and Minimum sweep distance during calibration
 constexpr uint32_t CAL_I2C_TIMEOUT_US    = 5000;
-constexpr uint32_t CAL_SWEEP_TIMEOUT_US  = 10000000;
-constexpr uint32_t CAL_SETTLE_TIMEOUT_US = 5000000;
+constexpr uint32_t CAL_SWEEP_TIMEOUT_US  = 10'000'000;
+constexpr uint32_t CAL_SETTLE_TIMEOUT_US = 5'000'000;
 constexpr int16_t  CAL_ZERO_MIN_SWEEP_COUNTS = WHEEL_COUNTS_PER_REV / 16;
 constexpr int16_t  CAL_FORCE_MIN_SWEEP_COUNTS = WHEEL_COUNTS_PER_REV;
 
@@ -99,23 +99,23 @@ constexpr uint16_t DEAD_TIME_US             = 50;
 // Tuned for 12V 775 DC motor to limit current to a maximum of 15A
 constexpr uint16_t PEAK_STALL_PWM           = 3749;  // ~60% duty cycle
 constexpr uint16_t CONT_STALL_PWM           = 1874;  // ~30% duty cycle
-constexpr uint32_t PEAK_FALLOFF_TIME_US      = 10000000; // 10s
-constexpr uint32_t PEAK_RECOVERY_PENALTY     = 3;
+constexpr uint32_t PEAK_FALLOFF_TIME_US      = 10'000'000; // 10s
+constexpr uint32_t PEAK_RECOVERY_PENALTY     = 3;  // How much slower the timer recharges
 
 // =========================================================================
 // PROTECTION ENVELOPE (Speed Limiter)
 // =========================================================================
 // Soft speed limiter to protect the user from dangerously fast wheel spins.
 // Limits forward accelerating torque, but allows braking/damping forces.
-constexpr int32_t VELOCITY_FADE_START_CPS    = 15000; // ~110 RPM. Start reducing max PWM.
-constexpr int32_t MAX_SAFE_VELOCITY_CPS      = 19000; // ~140 RPM. PWM reduced to 0.
+constexpr int32_t VELOCITY_FADE_START_CPS    = 15'000; // ~110 RPM. Start reducing max PWM.
+constexpr int32_t MAX_SAFE_VELOCITY_CPS      = 19'000; // ~140 RPM. PWM reduced to 0.
 
 // =========================================================================
 // AS5600 SENSOR
 // =========================================================================
 
 constexpr uint8_t  I2C_INSTANCE         = (PIN_I2C_SDA / 2) % 2;
-constexpr uint32_t I2C_FREQ_HZ           = 100000;  // 100 kHz
+constexpr uint32_t I2C_FREQ_HZ           = 100'000;  // 100 kHz
 constexpr uint32_t I2C_READ_INTERVAL_US  = 1000;    // 1 ms
 constexpr uint32_t I2C_WATCHDOG_TIMEOUT_US = 5000;  // 5 ms — motor kill if missed
 
@@ -138,7 +138,7 @@ constexpr uint8_t  AS5600_STATUS_MD      = 0x20;    // Magnet detected
 // Maximum physically possible delta between reads (raw counts).
 // Any delta exceeding this is a sensor glitch and must be discarded.
 // 30000 counts/sec = ~220 RPM. The soft limiter kicks in at 19000 counts/sec.
-constexpr int32_t  MAX_PHYSICAL_DELTA_CPS     = 30000;
+constexpr int32_t  MAX_PHYSICAL_DELTA_CPS     = 30'000;
 
 // Number of consecutive bad magnet reads before motor is killed.
 // Allows the motor to coast through 1-2ms EMI-induced sensor glitches.
@@ -153,7 +153,7 @@ constexpr int32_t VELOCITY_EMA_N         = 8;
 // =========================================================================
 
 constexpr uint8_t  SPI_INSTANCE         = (PIN_SPI_RX / 8) % 2;
-constexpr uint32_t SPI_FREQ_HZ           = 100000;  // 100 kHz (Matches I2C for better motor noise immunity)
+constexpr uint32_t SPI_FREQ_HZ           = 100'000;  // 100 kHz (Matches I2C for better motor noise immunity)
 constexpr uint8_t  BUTTON_COUNT          = 16;       // 2x HCF4021B = 16 bits
 constexpr uint8_t  DEBOUNCE_READS        = 4;        // Rolling buffer depth
 constexpr uint32_t BUTTON_UPDATE_INTERVAL_US = 2000; // 500 Hz
@@ -165,7 +165,6 @@ constexpr uint32_t BUTTON_UPDATE_INTERVAL_US = 2000; // 500 Hz
 constexpr uint8_t  ADC_CHANNEL_ACCEL     = PIN_ADC_ACCEL - 26;
 constexpr uint8_t  ADC_CHANNEL_BRAKE     = PIN_ADC_BRAKE - 26;
 constexpr uint8_t  ADC_CHANNEL_VBUS      = PIN_ADC_VBUS - 26;
-constexpr uint32_t ADC_SAMPLE_FREQ_HZ    = 3000;    // 3 kHz
 constexpr uint8_t  ADC_FILTER_DEPTH      = 20;      // 20 samples, discard top/bottom 2, average 16
 constexpr uint32_t PEDAL_UPDATE_INTERVAL_US = 500;  // 0.5ms (2000 Hz)
 
@@ -173,7 +172,7 @@ constexpr uint32_t PEDAL_UPDATE_INTERVAL_US = 500;  // 0.5ms (2000 Hz)
 // LED STATUS CONTROLLER
 // =========================================================================
 
-constexpr uint32_t LED_UPDATE_INTERVAL_US = 10000; // 100 Hz (10ms)
+constexpr uint32_t LED_UPDATE_INTERVAL_US = 10'000; // 100 Hz (10ms)
 constexpr uint32_t LED_UPDATE_INTERVAL_MS = LED_UPDATE_INTERVAL_US / 1000;
 constexpr uint32_t LED_FLASH_ON_MS       = 200;
 constexpr uint32_t LED_FLASH_OFF_MS      = 500;

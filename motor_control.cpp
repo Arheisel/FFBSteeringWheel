@@ -134,7 +134,7 @@ uint16_t MotorControl::get_safe_max_pwm(int32_t velocity)
 
     uint16_t max_allowed_pwm = PEAK_STALL_PWM;
 
-    if (remaining_peak_time_us_ <= 0)
+    if (remaining_peak_time_us_ == 0)
     {
         max_allowed_pwm = CONT_STALL_PWM;
     }
@@ -176,7 +176,24 @@ void MotorControl::update_stall_time(uint16_t pwm)
     uint32_t elapsed_us = now - last_stall_time_us_;
     last_stall_time_us_ = now;
 
-    if (pwm <= CONT_STALL_PWM)
+    if (pwm > CONT_STALL_PWM)
+    {
+        if (remaining_peak_time_us_ == 0)
+            return;
+
+        // --- Quadratic I^2t Drain ---
+        uint32_t excess = pwm - CONT_STALL_PWM;
+        uint32_t excess_sq = excess * excess;
+        constexpr uint32_t MAX_EXCESS_SQ = (PEAK_STALL_PWM - CONT_STALL_PWM) * (PEAK_STALL_PWM - CONT_STALL_PWM);
+
+        uint32_t drain = static_cast<uint32_t>((static_cast<uint64_t>(elapsed_us) * excess_sq) / MAX_EXCESS_SQ);
+    
+        if (__builtin_sub_overflow(remaining_peak_time_us_, drain, &remaining_peak_time_us_))
+        {
+            remaining_peak_time_us_ = 0;
+        }
+    }
+    else
     {
         if (remaining_peak_time_us_ == PEAK_FALLOFF_TIME_US)
             return;
@@ -185,16 +202,6 @@ void MotorControl::update_stall_time(uint16_t pwm)
             || remaining_peak_time_us_ > PEAK_FALLOFF_TIME_US)
         {
             remaining_peak_time_us_ = PEAK_FALLOFF_TIME_US;
-        }
-    }
-    else
-    {
-        if (remaining_peak_time_us_ == 0)
-            return;
-
-        if (__builtin_sub_overflow(remaining_peak_time_us_, elapsed_us, &remaining_peak_time_us_))
-        {
-            remaining_peak_time_us_ = 0;
         }
     }
 }
