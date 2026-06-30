@@ -12,10 +12,10 @@ This project implements a robust, hard-real-time Force Feedback (FFB) steering w
 *   **Integer Math FFB Engine:** All FFB effects (Constant, Ramp, Periodic, Condition-based) are calculated using high-performance integer math, including a custom sine Look-Up Table (LUT) for periodic effects.
 *   **AS5600 Magnetic Encoder:** Non-blocking I2C DMA reads for zero-latency position and velocity tracking. Includes wrap-around handling and impossible-jump filtering.
 *   **BTS7960 Motor Control:** 20kHz hardware PWM with dead-time insertion to prevent shoot-through.
-*   **Advanced Safety & Stability:** Features an electronic end-stop (proportional reverse spring), hardware watchdog, and a low-velocity stall protection governor. Includes frame-tolerance for transient EMI magnet dropouts to prevent motor stutter.
+*   **Advanced Safety & Stability:** Features an electronic end-stop (proportional reverse spring), hardware watchdog, and a peak/continuous stall protection governor. Includes frame-tolerance for transient EMI magnet dropouts to prevent motor stutter.
 *   **LED Visibility Guarantees:** Ensures transient error codes flash for a minimum amount of cycles so they are human-readable before clearing.
 *   **On-Board Calibration:** Automated startup sweep to measure static friction and populate speed tables. Long-press calibration saves the wheel center and pedal limits persistently to the RP2040 flash memory.
-*   **Debug Console (CDC):** Enumerates as a composite HID + CDC device. Connect via serial (`screen /dev/ttyACM0 115200`) for a single-character CLI (`c` for calibration data, `s` for live status including synchronous I2C AGC reads, `e` for the hardware error log).
+*   **Debug Console (CDC):** Enumerates as a composite HID + CDC device. Connect via serial (`screen /dev/ttyACM0 115200`) for a line-buffered interactive CLI (`s` for live status including synchronous I2C AGC reads, `c` to view calibration data, `e` for the error log, `cs` to tune parameters on the fly and `cw` to save parameters to flash). Supports single command history (Up arrow) and line editing.
 
 ## Hardware Setup
 

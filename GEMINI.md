@@ -159,10 +159,11 @@ All tunable parameters live in `config.h`. This includes:
 
 1. **`MotorControl` is the sole owner of the BTS7960 pins.** No other code may touch PWM or EN GPIOs.
 2. **Dead-time insertion** is mandatory on every direction change to prevent H-bridge shoot-through. Direction memory is preserved across zero-force intervals so dead-time fires correctly on reversal.
-3. **Stall protection governor** dynamically clamps PWM based on velocity and direction:
-   - **Stalled (v=0):** Capped at `STALL_PWM_MAX` (~36% duty).
-   - **Moving forward (with motor):** Linearly scales from `STALL_PWM_MAX` to `FORWARD_MAX_PWM` over `0..FORWARD_VELOCITY_THRESHOLD`.
-   - **Moving backward (fighting motor):** Linearly decreases from `STALL_PWM_MAX` to `BACKWARDS_PWM_MAX` (0) over `0..BACKWARDS_VELOCITY_THRESHOLD`.
+3. **Stall protection governor** dynamically limits PWM based on a peak/continuous current-limiting model:
+   - **Tuned limits:** peak duty cycle cap (`PEAK_STALL_PWM` at ~60% duty) and continuous duty cycle cap (`CONT_STALL_PWM` at ~30% duty).
+   - **Time-based decay:** If commanded PWM exceeds `CONT_STALL_PWM`, the remaining peak time accumulator (`remaining_peak_time_us_`) decays towards 0 from `PEAK_FALLOFF_TIME_US` (10s).
+   - **Linear envelope:** The actual allowed max PWM scales down linearly from peak to continuous limits based on the remaining peak time.
+   - **Cool-down recovery:** When commanded PWM drops below `CONT_STALL_PWM`, the accumulator recovers at a reduced rate governed by `PEAK_RECOVERY_PENALTY` (3x penalty factor) until it resets to the full 10s.
 4. **Protection envelope (soft speed limiter)** prevents dangerous wheel speeds. When velocity exceeds `VELOCITY_FADE_START` (~110 RPM), forward PWM fades linearly to 0 at `MAX_SAFE_VELOCITY` (~140 RPM). Braking/damping forces are not limited.
 5. **Static friction compensation** adds a calibrated `cw_zero_pwm` / `ccw_zero_pwm` offset to all force commands so the motor breaks static friction at any non-zero force level.
 6. **Electronic end-stops** in `FFBProcessor` apply a proportional reverse spring force when the wheel exceeds `MAX_HALF_ANGLE_COUNTS`, short-circuiting all other effect processing.
@@ -178,6 +179,7 @@ All tunable parameters live in `config.h`. This includes:
 11. **Glitch filter with dead-reckoning:** If the AS5600 reports an impossible position jump (delta > `MAX_PHYSICAL_DELTA`), the parser extrapolates position from the last known velocity instead of accepting the bad data. After 10 consecutive impossible jumps, a fatal `EncoderDesync` error stops the motor and halts the I2C loop.
 12. **Recovery desync detection:** On the first read after an I2C watchdog recovery, if the delta exceeds `MAX_PHYSICAL_DELTA`, a fatal `DesyncAfterRecovery` error is raised rather than trusting potentially stale data.
 13. **Flash writes** are performed exclusively during the calibration phase when Core 1 is NOT running. The `flash_safe_execute` wrapper is used with a dynamic check, bypassing the multicore locks if Core 1 is inactive.
+14. **Error Log Ring Buffer:** When the buffer is full, the write operation advances the read index (`g_error_log_read_idx`) to drop the oldest entry, maintaining a proper circular log.
 
 ## Timing Constraints
 
@@ -188,4 +190,5 @@ All tunable parameters live in `config.h`. This includes:
 - **1ms:** USB HID input report rate (1000Hz)
 - **50µs:** Dead-time between H-bridge direction changes
 - **250µs:** Core 0 main loop sleep (keeps `tud_task()` responsive at >1kHz)
-- Use `time_us_64()` for all duration/delta calculations (never `time_us_32()` — wraps at 71.5 minutes)
+- Use `time_us_64()` for absolute timestamps and long-duration calculations. For short-duration intervals and elapsed-time deltas, 32-bit `time_us_32()` is acceptable as unsigned wrap-around math handles overflow correctly.
+
