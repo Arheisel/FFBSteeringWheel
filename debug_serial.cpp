@@ -685,9 +685,9 @@ namespace
                 }
                 else if (strcmp(var, "friction") == 0)
                 {
-                    if (val < 0 || val > 10000)
+                    if (val < 1 || val > 9999)
                     {
-                        cdc_print("ERR: friction must be 0 to 10000\r\n");
+                        cdc_print("ERR: friction must be 1 to 9999\r\n");
                         return;
                     }
                     g_state->cal_state.friction_fade_force.store(val);
@@ -783,10 +783,15 @@ void debug_log_error(SystemStatus error_code)
     uint8_t idx = g_error_log_write_idx;
     uint8_t next_idx = (idx + 1) % ERROR_LOG_SIZE;
 
-    // When full, silently overwrite the current slot and do NOT advance read_idx.
-    // read_idx is only ever written by Core 0 (cmd_errors), eliminating the cross-core race.
     g_error_log[idx].timestamp_us = time_us_64();
     g_error_log[idx].error_code = error_code;
+
+    // If buffer is full, advance read pointer to drop oldest entry
+    if (next_idx == g_error_log_read_idx)
+    {
+        g_error_log_read_idx = (g_error_log_read_idx + 1) % ERROR_LOG_SIZE;
+    }
+
     g_error_log_write_idx = next_idx;
 }
 

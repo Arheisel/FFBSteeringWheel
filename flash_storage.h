@@ -4,9 +4,6 @@
 #include "shared_state.h"
 #include "hardware/flash.h"
 
-#define MAGIC_NUMBER 0xDECAFBAD
-#define FLASH_DATA_VERSION 1
-
 class FlashStorage
 {
 public:
@@ -17,9 +14,12 @@ public:
     bool save(const CalibrationState &state, bool core1_running = true);
 
 private:
+    static constexpr uint32_t FLASH_MAGIC_NUMBER = 0xDECAFBAD;
+    static constexpr uint8_t FLASH_DATA_VERSION = 1;
+
     struct __attribute__((packed)) FlashCalibrationData
     {
-        uint32_t magic{MAGIC_NUMBER};        // Must be 0xFEEDFACE
+        uint32_t magic{FLASH_MAGIC_NUMBER};
         uint8_t version{FLASH_DATA_VERSION}; // Version number for future upgrades
 
         int32_t center_position;

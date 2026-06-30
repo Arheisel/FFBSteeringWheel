@@ -145,7 +145,7 @@ uint16_t MotorControl::get_safe_max_pwm(int32_t velocity)
     else
     {
         max_allowed_pwm = static_cast<uint16_t>(CONT_STALL_PWM 
-            + (static_cast<int64_t>(remaining_peak_time_us_) * (PEAK_STALL_PWM - CONT_STALL_PWM)) / PEAK_FALLOFF_TIME_US);
+            + (static_cast<uint64_t>(remaining_peak_time_us_) * (PEAK_STALL_PWM - CONT_STALL_PWM)) / PEAK_FALLOFF_TIME_US);
     }
 
     // --- Hardware Safety: Max Velocity Fading (Protection Envelope) ---

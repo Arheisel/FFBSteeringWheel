@@ -39,7 +39,7 @@ bool FlashStorage::load_internal(FlashCalibrationData &out_data)
     memcpy(&out_data, flash_data_ptr, sizeof(FlashCalibrationData));
 
     // Validate
-    if (out_data.magic != MAGIC_NUMBER)
+    if (out_data.magic != FLASH_MAGIC_NUMBER)
     {
         return false;
     }

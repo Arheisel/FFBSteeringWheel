@@ -42,10 +42,6 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle, bool is_recove
     if (!(status_reg & AS5600_STATUS_MD))
     {
         error_flags_ |= SensorState::ERR_MAGNET_MISSING;
-    }
-
-    if (error_flags_ & SensorState::ERR_MAGNET_MISSING)
-    {
         // Fatal hardware error (Magnet Missing) — do NOT update position or velocity.
         // We allow the frame to process if only MH or ML warnings are present,
         // because the motor's own magnetic field can trigger them at high PWM.
@@ -93,68 +89,65 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle, bool is_recove
     int32_t wraps = 0;
     int32_t delta = 0;
 
-    if (dt_us > 0)
+    // Determine shortest path for wrapped values
+    delta = static_cast<int32_t>(raw_angle) - static_cast<int32_t>(last_raw_angle_);
+    if (delta > ENCODER_COUNTS_PER_REV / 2)
     {
-        // Determine shortest path for wrapped values
-        delta = static_cast<int32_t>(raw_angle) - static_cast<int32_t>(last_raw_angle_);
-        if (delta > ENCODER_COUNTS_PER_REV / 2)
+        delta -= ENCODER_COUNTS_PER_REV;
+        wraps = -1;
+    }
+    else if (delta < -(ENCODER_COUNTS_PER_REV / 2))
+    {
+        delta += ENCODER_COUNTS_PER_REV;
+        wraps = 1;
+    }
+
+    // Calculate instantaneous velocity to check for physically impossible jumps
+    // CRITICAL: dt_us must be cast to int64_t. Otherwise, dividing a negative int64_t
+    // by a uint64_t promotes the negative number to a massive positive uint64_t!
+    int32_t inst_velocity_cps = (delta * 1000000) / static_cast<int32_t>(dt_us);
+
+    // ---- Filter Impossible Physics Jumps ----
+    if (inst_velocity_cps > MAX_PHYSICAL_DELTA_CPS || inst_velocity_cps < -MAX_PHYSICAL_DELTA_CPS)
+    {
+        if (is_recovery)
         {
-            delta -= ENCODER_COUNTS_PER_REV;
-            wraps = -1;
+            error_flags_ |= SensorState::ERR_RECOVERY_DESYNC;
+            return false;
         }
-        else if (delta < -(ENCODER_COUNTS_PER_REV / 2))
+
+        desync_counter_++;
+        if (desync_counter_ >= 10)
         {
-            delta += ENCODER_COUNTS_PER_REV;
-            wraps = 1;
+            error_flags_ |= SensorState::ERR_DESYNC;
+            return false;
         }
 
-        // Calculate instantaneous velocity to check for physically impossible jumps
-        // CRITICAL: dt_us must be cast to int64_t. Otherwise, dividing a negative int64_t
-        // by a uint64_t promotes the negative number to a massive positive uint64_t!
-        int32_t inst_velocity_cps = (delta * 1000000) / static_cast<int32_t>(dt_us);
+        // Impossible jump (likely I2C glitch)
+        // Recover gracefully by dead-reckoning the delta using the last known FILTERED velocity.
+        // CRITICAL: dt_us must be cast to int64_t to prevent promotion bugs here too!
+        delta = static_cast<int32_t>((static_cast<int64_t>(filtered_velocity_cps_) * static_cast<int64_t>(dt_us)) / 1000000);
 
-        // ---- Filter Impossible Physics Jumps ----
-        if (inst_velocity_cps > MAX_PHYSICAL_DELTA_CPS || inst_velocity_cps < -MAX_PHYSICAL_DELTA_CPS)
+        // Extrapolate what the raw angle should have been, accounting for potential wraps
+        int32_t total_raw = static_cast<int32_t>(last_raw_angle_) + delta;
+        wraps = 0;
+        while (total_raw >= ENCODER_COUNTS_PER_REV)
         {
-            if (is_recovery)
-            {
-                error_flags_ |= SensorState::ERR_RECOVERY_DESYNC;
-                return false;
-            }
-
-            desync_counter_++;
-            if (desync_counter_ >= 10)
-            {
-                error_flags_ |= SensorState::ERR_DESYNC;
-                return false;
-            }
-
-            // Impossible jump (likely I2C glitch)
-            // Recover gracefully by dead-reckoning the delta using the last known FILTERED velocity.
-            // CRITICAL: dt_us must be cast to int64_t to prevent promotion bugs here too!
-            delta = static_cast<int32_t>((static_cast<int64_t>(filtered_velocity_cps_) * static_cast<int64_t>(dt_us)) / 1000000);
-
-            // Extrapolate what the raw angle should have been, accounting for potential wraps
-            int32_t total_raw = static_cast<int32_t>(last_raw_angle_) + delta;
-            wraps = 0;
-            while (total_raw >= ENCODER_COUNTS_PER_REV)
-            {
-                total_raw -= ENCODER_COUNTS_PER_REV;
-                wraps++;
-            }
-            while (total_raw < 0)
-            {
-                total_raw += ENCODER_COUNTS_PER_REV;
-                wraps--;
-            }
-
-            raw_angle = static_cast<uint16_t>(total_raw);
+            total_raw -= ENCODER_COUNTS_PER_REV;
+            wraps++;
         }
-        else
+        while (total_raw < 0)
         {
-            desync_counter_ = 0;
-            velocity_cps_ = inst_velocity_cps;
+            total_raw += ENCODER_COUNTS_PER_REV;
+            wraps--;
         }
+
+        raw_angle = static_cast<uint16_t>(total_raw);
+    }
+    else
+    {
+        desync_counter_ = 0;
+        velocity_cps_ = inst_velocity_cps;
     }
 
     // Apply EMA smoothing to velocity for downstream consumers (motor governor)
