@@ -85,7 +85,7 @@ constexpr int16_t  CAL_FORCE_MIN_SWEEP_COUNTS = WHEEL_COUNTS_PER_REV;
 constexpr uint16_t PWM_WRAP              = 6249;   // TOP value, duty 0..6249
 
 // Flash Default values
-constexpr uint32_t DEFAULT_FORCE_SCALE_PERCENT   = 100;
+constexpr uint32_t DEFAULT_FORCE_GAIN_PERCENT   = 100;
 constexpr uint16_t DEFAULT_FRICTION_FADE_FORCE   = 150;
 
 // =========================================================================

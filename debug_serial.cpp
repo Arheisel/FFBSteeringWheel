@@ -182,9 +182,9 @@ namespace
         cdc_print(buf);
 
         p = buf;
-        strcpy(p, "Force Scale %: ");
+        strcpy(p, "Force Gain %: ");
         p += 15;
-        p = uint_to_str(g_state->cal_state.force_scale_percent.load(), p);
+        p = uint_to_str(g_state->cal_state.force_gain_percent.load(), p);
         strcpy(p, "\r\n");
         cdc_print(buf);
 
@@ -560,7 +560,7 @@ namespace
         cdc_print("        cs center <val>      - Set wheel center offset (0 - 4096)\r\n");
         cdc_print("        cs angle <val>       - Set max wheel angle (>=180)\r\n");
         cdc_print("        cs damper <val>      - Set system damper (0-10000)\r\n");
-        cdc_print("        cs scale <val>       - Set force scale %\r\n");
+        cdc_print("        cs gain <val>       - Set force gain %\r\n");
         cdc_print("        cs friction <val>    - Set friction fade force (0-10000)\r\n");
         cdc_print("  help - Print this help\r\n");
     }
@@ -674,14 +674,14 @@ namespace
                     }
                     g_state->cal_state.system_damper_strength.store(val);
                 }
-                else if (strcmp(var, "scale") == 0)
+                else if (strcmp(var, "gain") == 0)
                 {
                     if (val < 0)
                     {
-                        cdc_print("ERR: scale must be >= 0\r\n");
+                        cdc_print("ERR: gain must be >= 0\r\n");
                         return;
                     }
-                    g_state->cal_state.force_scale_percent.store(val);
+                    g_state->cal_state.force_gain_percent.store(val);
                 }
                 else if (strcmp(var, "friction") == 0)
                 {

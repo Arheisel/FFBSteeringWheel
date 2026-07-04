@@ -82,7 +82,7 @@ bool FlashStorage::load(CalibrationState &out_state)
             out_state.ccw_speed_lut[i].store(cal_data.ccw_speed[i]);
         }
         out_state.system_damper_strength.store(cal_data.system_damper_strength);
-        out_state.force_scale_percent.store(cal_data.force_scale_percent);
+        out_state.force_gain_percent.store(cal_data.force_gain_percent);
         out_state.friction_fade_force.store(cal_data.friction_fade_force);
     }
     else
@@ -97,7 +97,7 @@ bool FlashStorage::load(CalibrationState &out_state)
         out_state.max_half_angle_counts.store(max_half_angle_counts);
         out_state.wheel_angle_deg.store(DEFAULT_MAX_WHEEL_ANGLE_DEG);
         out_state.system_damper_strength.store(0);
-        out_state.force_scale_percent.store(DEFAULT_FORCE_SCALE_PERCENT);
+        out_state.force_gain_percent.store(DEFAULT_FORCE_GAIN_PERCENT);
         out_state.friction_fade_force.store(DEFAULT_FRICTION_FADE_FORCE);
     }
     return valid;
@@ -153,7 +153,7 @@ bool FlashStorage::save(const CalibrationState &state, bool core1_running)
     }
     data.wheel_angle_deg = state.wheel_angle_deg.load();
     data.system_damper_strength = state.system_damper_strength.load();
-    data.force_scale_percent = state.force_scale_percent.load();
+    data.force_gain_percent = state.force_gain_percent.load();
     data.friction_fade_force = state.friction_fade_force.load();
 
     return save_internal(data, core1_running);

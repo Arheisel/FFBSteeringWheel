@@ -36,7 +36,7 @@ private:
 
         uint16_t wheel_angle_deg;
         uint16_t system_damper_strength;
-        uint16_t force_scale_percent;
+        uint16_t force_gain_percent;
         uint16_t friction_fade_force;
 
         uint8_t reserved_space[183]{0};
