@@ -86,7 +86,7 @@ constexpr uint16_t PWM_WRAP              = 6249;   // TOP value, duty 0..6249
 
 // Flash Default values
 constexpr uint32_t DEFAULT_FORCE_GAIN_PERCENT   = 100;
-constexpr uint16_t DEFAULT_FRICTION_FADE_FORCE   = 150;
+constexpr uint16_t DEFAULT_FRICTION_FADE_FORCE   = 50;
 
 // =========================================================================
 // MOTOR SAFETY (Stall Governor)

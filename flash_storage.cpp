@@ -39,19 +39,9 @@ bool FlashStorage::load_internal(FlashCalibrationData &out_data)
     memcpy(&out_data, flash_data_ptr, sizeof(FlashCalibrationData));
 
     // Validate
-    if (out_data.magic != FLASH_MAGIC_NUMBER)
-    {
-        return false;
-    }
-    if (out_data.version != FLASH_DATA_VERSION)
-    {
-        // Handle migration if needed in the future
-        return false;
-    }
-    if (out_data.crc32 != calculate_crc(out_data))
-    {
-        return false; // Corrupted
-    }
+    if (out_data.magic != FLASH_MAGIC_NUMBER) return false;
+
+    if (out_data.crc32 != calculate_crc(out_data)) return false; // Corrupted
 
     return true;
 }
@@ -61,46 +51,44 @@ bool FlashStorage::load(CalibrationState &out_state)
     FlashCalibrationData cal_data;
     bool valid = load_internal(cal_data);
 
-    if (valid)
+    if (!valid) return false;
+
+    switch (cal_data.version)
     {
-        out_state.center_offset.store(cal_data.center_position);
-        out_state.accel_min.store(cal_data.accel_min);
-        out_state.accel_max.store(cal_data.accel_max);
-        out_state.brake_min.store(cal_data.brake_min);
-        out_state.brake_max.store(cal_data.brake_max);
-
-        int32_t half_angle_deg = cal_data.wheel_angle_deg / 2;
-        int32_t max_half_angle_counts = (half_angle_deg * WHEEL_COUNTS_PER_REV) / 360;
-        out_state.max_half_angle_counts.store(max_half_angle_counts);
-        out_state.wheel_angle_deg.store(cal_data.wheel_angle_deg);
-
-        out_state.cw_zero_pwm.store(cal_data.cw_zero_pwm);
-        out_state.ccw_zero_pwm.store(cal_data.ccw_zero_pwm);
-        for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++)
+        // Reminder: Set new versions in descending order
+        // case 2:
+        //     ...
+        //    [[fallthrough]];
+        case 1:
         {
-            out_state.cw_speed_lut[i].store(cal_data.cw_speed[i]);
-            out_state.ccw_speed_lut[i].store(cal_data.ccw_speed[i]);
-        }
-        out_state.system_damper_strength.store(cal_data.system_damper_strength);
-        out_state.force_gain_percent.store(cal_data.force_gain_percent);
-        out_state.friction_fade_force.store(cal_data.friction_fade_force);
-    }
-    else
-    {
-        out_state.accel_min.store(100);
-        out_state.accel_max.store(4000);
-        out_state.brake_min.store(100);
-        out_state.brake_max.store(4000);
+            out_state.center_offset.store(cal_data.center_position);
+            out_state.accel_min.store(cal_data.accel_min);
+            out_state.accel_max.store(cal_data.accel_max);
+            out_state.brake_min.store(cal_data.brake_min);
+            out_state.brake_max.store(cal_data.brake_max);
 
-        int32_t half_angle_deg = DEFAULT_MAX_WHEEL_ANGLE_DEG / 2;
-        int32_t max_half_angle_counts = (half_angle_deg * WHEEL_COUNTS_PER_REV) / 360;
-        out_state.max_half_angle_counts.store(max_half_angle_counts);
-        out_state.wheel_angle_deg.store(DEFAULT_MAX_WHEEL_ANGLE_DEG);
-        out_state.system_damper_strength.store(0);
-        out_state.force_gain_percent.store(DEFAULT_FORCE_GAIN_PERCENT);
-        out_state.friction_fade_force.store(DEFAULT_FRICTION_FADE_FORCE);
+            int32_t half_angle_deg = cal_data.wheel_angle_deg / 2;
+            int32_t max_half_angle_counts = (half_angle_deg * WHEEL_COUNTS_PER_REV) / 360;
+            out_state.max_half_angle_counts.store(max_half_angle_counts);
+            out_state.wheel_angle_deg.store(cal_data.wheel_angle_deg);
+
+            out_state.cw_zero_pwm.store(cal_data.cw_zero_pwm);
+            out_state.ccw_zero_pwm.store(cal_data.ccw_zero_pwm);
+            for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++)
+            {
+                out_state.cw_speed_lut[i].store(cal_data.cw_speed[i]);
+                out_state.ccw_speed_lut[i].store(cal_data.ccw_speed[i]);
+            }
+            out_state.system_damper_strength.store(cal_data.system_damper_strength);
+            out_state.force_gain_percent.store(cal_data.force_gain_percent);
+            out_state.friction_fade_force.store(cal_data.friction_fade_force);
+            break;
+        }
+        default:
+            return false; // Unsupported version
     }
-    return valid;
+
+    return true;
 }
 
 bool FlashStorage::save_internal(const FlashCalibrationData &data, bool core1_running)

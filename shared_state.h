@@ -86,8 +86,8 @@ struct EffectState {
 struct CalibrationState {
     // Speed LUT: expected maximum raw velocity at each force level
     // Index corresponds to CAL_FORCE_LEVELS[]
-    std::atomic<uint32_t>  cw_speed_lut[CAL_FORCE_LEVEL_COUNT];
-    std::atomic<uint32_t>  ccw_speed_lut[CAL_FORCE_LEVEL_COUNT];
+    std::atomic<uint32_t>  cw_speed_lut[CAL_FORCE_LEVEL_COUNT]{};
+    std::atomic<uint32_t>  ccw_speed_lut[CAL_FORCE_LEVEL_COUNT]{};
 
     // Minimum PWM to overcome static friction (independently per direction)
     std::atomic<uint16_t> cw_zero_pwm{0};

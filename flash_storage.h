@@ -39,7 +39,7 @@ private:
         uint16_t force_gain_percent;
         uint16_t friction_fade_force;
 
-        uint8_t reserved_space[183]{0};
+        uint8_t reserved_space[183]{};
 
         uint32_t crc32; // Integrity check
     };

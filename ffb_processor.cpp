@@ -58,8 +58,8 @@ int32_t FFBProcessor::int_sin(uint32_t angle_centideg)
 
 void FFBProcessor::apply_calibration(const CalibrationState &cal_state)
 {
-    cal_lut_cw_ = &cal_state.cw_speed_lut;
-    cal_lut_ccw_ = &cal_state.ccw_speed_lut;
+    if (cal_state.cw_speed_lut[0] != 0) cal_lut_cw_ = &cal_state.cw_speed_lut;
+    if (cal_state.ccw_speed_lut[0] != 0) cal_lut_ccw_ = &cal_state.ccw_speed_lut;
     max_half_angle_counts_ = cal_state.max_half_angle_counts.load(std::memory_order_relaxed);
     system_damper_strength_ = cal_state.system_damper_strength.load(std::memory_order_relaxed);
 
