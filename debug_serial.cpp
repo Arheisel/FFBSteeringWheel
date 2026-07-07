@@ -183,7 +183,7 @@ namespace
 
         p = buf;
         strcpy(p, "Force Gain %: ");
-        p += 15;
+        p += 14;
         p = uint_to_str(g_state->cal_state.force_gain_percent.load(), p);
         strcpy(p, "\r\n");
         cdc_print(buf);
