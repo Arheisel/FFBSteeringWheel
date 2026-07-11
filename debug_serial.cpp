@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+#include <type_traits>
 
 namespace
 {
@@ -78,69 +79,175 @@ namespace
         tud_cdc_write_flush();
     }
 
-    // =========================================================================
-    // Helper: Integer to string (avoids printf/snprintf overhead)
-    // =========================================================================
-
-    char *int_to_str(int32_t val, char *buf)
+    void cdc_print_char(char c)
     {
-        if (val < 0)
+        if (!tud_cdc_connected())
+            return;
+        while (tud_cdc_write_available() == 0)
         {
-            *buf++ = '-';
-            // Handle INT32_MIN edge case
-            if (val == -2147483647 - 1)
-            {
-                strcpy(buf, "2147483648");
-                return buf + 10;
-            }
-            val = -val;
+            if (!tud_cdc_connected())
+                return;
+            tud_cdc_write_flush();
+            tud_task();
         }
-        // Write digits in reverse
-        char tmp[11];
-        int i = 0;
-        if (val == 0)
-        {
-            tmp[i++] = '0';
-        }
-        else
-        {
-            while (val > 0)
-            {
-                tmp[i++] = '0' + (val % 10);
-                val /= 10;
-            }
-        }
-        // Reverse into buf
-        for (int j = i - 1; j >= 0; j--)
-        {
-            *buf++ = tmp[j];
-        }
-        *buf = '\0';
-        return buf;
+        tud_cdc_write(&c, 1);
+        tud_cdc_write_flush();
     }
 
-    char *uint_to_str(uint32_t val, char *buf)
+    // =========================================================================
+    // SafeBufferWriter & Print Helpers
+    // =========================================================================
+
+    template <size_t Size = 128>
+    class SafeBufferWriter
     {
-        char tmp[11];
-        int i = 0;
-        if (val == 0)
+    public:
+        SafeBufferWriter() : write_idx_(0)
         {
-            tmp[i++] = '0';
+            buf_[0] = '\0';
+        }
+
+        void reset()
+        {
+            write_idx_ = 0;
+            if (Size > 0)
+            {
+                buf_[0] = '\0';
+            }
+        }
+
+        void append_str(const char *str)
+        {
+            if (!str || write_idx_ >= Size - 1)
+                return;
+            while (*str && write_idx_ < Size - 1)
+            {
+                buf_[write_idx_++] = *str++;
+            }
+            buf_[write_idx_] = '\0';
+        }
+
+        void append_int(int32_t val)
+        {
+            char temp[12];
+            int_to_str(val, temp);
+            append_str(temp);
+        }
+
+        void append_uint(uint32_t val)
+        {
+            char temp[12];
+            uint_to_str(val, temp);
+            append_str(temp);
+        }
+
+        void append_hex16(uint16_t val)
+        {
+            const char hex_chars[] = "0123456789ABCDEF";
+            char temp[5];
+            temp[0] = hex_chars[(val >> 12) & 0xF];
+            temp[1] = hex_chars[(val >> 8) & 0xF];
+            temp[2] = hex_chars[(val >> 4) & 0xF];
+            temp[3] = hex_chars[val & 0xF];
+            temp[4] = '\0';
+            append_str(temp);
+        }
+
+        const char *c_str() const
+        {
+            return buf_;
+        }
+
+    private:
+        char buf_[Size];
+        size_t write_idx_;
+
+        static char *int_to_str(int32_t val, char *buf)
+        {
+            if (val < 0)
+            {
+                *buf++ = '-';
+                // Handle INT32_MIN edge case
+                if (val == -2147483647 - 1)
+                {
+                    strcpy(buf, "2147483648");
+                    return buf + 10;
+                }
+                val = -val;
+            }
+            // Write digits in reverse
+            char tmp[11];
+            int i = 0;
+            if (val == 0)
+            {
+                tmp[i++] = '0';
+            }
+            else
+            {
+                while (val > 0)
+                {
+                    tmp[i++] = '0' + (val % 10);
+                    val /= 10;
+                }
+            }
+            // Reverse into buf
+            for (int j = i - 1; j >= 0; j--)
+            {
+                *buf++ = tmp[j];
+            }
+            *buf = '\0';
+            return buf;
+        }
+
+        static char *uint_to_str(uint32_t val, char *buf)
+        {
+            char tmp[11];
+            int i = 0;
+            if (val == 0)
+            {
+                tmp[i++] = '0';
+            }
+            else
+            {
+                while (val > 0)
+                {
+                    tmp[i++] = '0' + (val % 10);
+                    val /= 10;
+                }
+            }
+            for (int j = i - 1; j >= 0; j--)
+            {
+                *buf++ = tmp[j];
+            }
+            *buf = '\0';
+            return buf;
+        }
+    };
+
+    template <typename T, typename = typename std::enable_if<std::is_integral<T>::value>::type>
+    void cdc_print_line(const char *label, T value)
+    {
+        SafeBufferWriter<> writer;
+        writer.append_str(label);
+        if constexpr (std::is_signed<T>::value)
+        {
+            writer.append_int(static_cast<int32_t>(value));
         }
         else
         {
-            while (val > 0)
-            {
-                tmp[i++] = '0' + (val % 10);
-                val /= 10;
-            }
+            writer.append_uint(static_cast<uint32_t>(value));
         }
-        for (int j = i - 1; j >= 0; j--)
-        {
-            *buf++ = tmp[j];
-        }
-        *buf = '\0';
-        return buf;
+        writer.append_str("\r\n");
+        cdc_print(writer.c_str());
+    }
+
+    void cdc_print_line(const char *label, const char *value)
+    {
+        SafeBufferWriter<> writer;
+        writer.append_str(label);
+        writer.append_str(value);
+        writer.append_str("\r\n");
+        cdc_print(writer.c_str());
     }
 
     // =========================================================================
@@ -155,104 +262,57 @@ namespace
             return;
         }
 
-        char buf[64];
-        char *p;
-
         cdc_print("=== CALIBRATION DATA ===\r\n");
 
-        p = buf;
-        strcpy(p, "Center: ");
-        p += 8;
-        p = int_to_str(g_state->cal_state.center_offset.load(), p);
-        strcpy(p, "\r\n");
-        cdc_print(buf);
-
-        p = buf;
-        strcpy(p, "Wheel Angle (deg): ");
-        p += 19;
-        p = uint_to_str(g_state->cal_state.wheel_angle_deg.load(), p);
-        strcpy(p, "\r\n");
-        cdc_print(buf);
-
-        p = buf;
-        strcpy(p, "System Damper: ");
-        p += 15;
-        p = uint_to_str(g_state->cal_state.system_damper_strength.load(), p);
-        strcpy(p, "\r\n");
-        cdc_print(buf);
-
-        p = buf;
-        strcpy(p, "Force Gain %: ");
-        p += 14;
-        p = uint_to_str(g_state->cal_state.force_gain_percent.load(), p);
-        strcpy(p, "\r\n");
-        cdc_print(buf);
-
-        p = buf;
-        strcpy(p, "Friction Fade Force: ");
-        p += 21;
-        p = uint_to_str(g_state->cal_state.friction_fade_force.load(), p);
-        strcpy(p, "\r\n");
-        cdc_print(buf);
+        cdc_print_line("Center: ", g_state->cal_state.center_offset.load());
+        cdc_print_line("Wheel Angle (deg): ", g_state->cal_state.wheel_angle_deg.load());
+        cdc_print_line("System Damper: ", g_state->cal_state.system_damper_strength.load());
+        cdc_print_line("Force Gain %: ", g_state->cal_state.force_gain_percent.load());
+        cdc_print_line("Friction Fade Force: ", g_state->cal_state.friction_fade_force.load());
+        cdc_print_line("CW Zero PWM: ", g_state->cal_state.cw_zero_pwm.load());
+        cdc_print_line("CCW Zero PWM: ", g_state->cal_state.ccw_zero_pwm.load());
 
         uint16_t amin = g_state->cal_state.accel_min.load();
         uint16_t amax = g_state->cal_state.accel_max.load();
         uint16_t bmin = g_state->cal_state.brake_min.load();
         uint16_t bmax = g_state->cal_state.brake_max.load();
 
-        p = buf;
-        strcpy(p, "Accel: ");
-        p += 7;
-        p = uint_to_str(amin, p);
-        *p++ = '-';
-        p = uint_to_str(amax, p);
-        strcpy(p, "\r\n");
-        cdc_print(buf);
+        SafeBufferWriter<> writer;
 
-        p = buf;
-        strcpy(p, "Brake: ");
-        p += 7;
-        p = uint_to_str(bmin, p);
-        *p++ = '-';
-        p = uint_to_str(bmax, p);
-        strcpy(p, "\r\n");
-        cdc_print(buf);
+        writer.append_str("Accel: ");
+        writer.append_uint(amin);
+        writer.append_str("-");
+        writer.append_uint(amax);
+        writer.append_str("\r\n");
+        cdc_print(writer.c_str());
 
-        p = buf;
-        strcpy(p, "CW Zero PWM: ");
-        p += 13;
-        p = uint_to_str(g_state->cal_state.cw_zero_pwm.load(), p);
-        strcpy(p, "\r\n");
-        cdc_print(buf);
+        writer.reset();
+        writer.append_str("Brake: ");
+        writer.append_uint(bmin);
+        writer.append_str("-");
+        writer.append_uint(bmax);
+        writer.append_str("\r\n");
+        cdc_print(writer.c_str());
 
-        p = buf;
-        strcpy(p, "CCW Zero PWM: ");
-        p += 14;
-        p = uint_to_str(g_state->cal_state.ccw_zero_pwm.load(), p);
-        strcpy(p, "\r\n");
-        cdc_print(buf);
-
-        cdc_print("CW Speed LUT:");
+        writer.reset();
+        writer.append_str("CW Speed LUT:");
         for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++)
         {
-            p = buf;
-            *p++ = ' ';
-            p = int_to_str(g_state->cal_state.cw_speed_lut[i].load(), p);
-            *p = '\0';
-            cdc_print(buf);
+            writer.append_str(" ");
+            writer.append_int(g_state->cal_state.cw_speed_lut[i].load());
         }
-        cdc_print("\r\n");
+        writer.append_str("\r\n");
+        cdc_print(writer.c_str());
 
-        cdc_print("CCW Speed LUT:");
+        writer.reset();
+        writer.append_str("CCW Speed LUT:");
         for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++)
         {
-            p = buf;
-            *p++ = ' ';
-            p = int_to_str(g_state->cal_state.ccw_speed_lut[i].load(), p);
-            *p = '\0';
-            cdc_print(buf);
+            writer.append_str(" ");
+            writer.append_int(g_state->cal_state.ccw_speed_lut[i].load());
         }
-        cdc_print("\r\n");
+        writer.append_str("\r\n");
+        cdc_print(writer.c_str());
     }
 
     // =========================================================================
@@ -279,85 +339,61 @@ namespace
 
     void print_error_flags(uint8_t flags)
     {
-        char buf[128];
-        char *p = buf;
-        strcpy(p, "Err flags: ");
-        p += 11;
-        p = uint_to_str(flags, p);
+        SafeBufferWriter<128> writer;
+        writer.append_str("Err flags: ");
+        writer.append_uint(flags);
 
         if (flags == 0)
         {
-            strcpy(p, " (None)\r\n");
+            writer.append_str(" (None)\r\n");
         }
         else
         {
-            strcpy(p, " (");
-            p += 2;
+            writer.append_str(" (");
             bool first = true;
             if (flags & SensorState::ERR_MAGNET_HIGH)
             {
-                strcpy(p, "MagnetHigh");
-                p += 10;
+                writer.append_str("MagnetHigh");
                 first = false;
             }
             if (flags & SensorState::ERR_MAGNET_LOW)
             {
                 if (!first)
-                {
-                    *p++ = ',';
-                    *p++ = ' ';
-                }
-                strcpy(p, "MagnetLow");
-                p += 9;
+                    writer.append_str(", ");
+                writer.append_str("MagnetLow");
                 first = false;
             }
             if (flags & SensorState::ERR_MAGNET_MISSING)
             {
                 if (!first)
-                {
-                    *p++ = ',';
-                    *p++ = ' ';
-                }
-                strcpy(p, "MagnetMissing");
-                p += 13;
+                    writer.append_str(", ");
+                writer.append_str("MagnetMissing");
                 first = false;
             }
             if (flags & SensorState::ERR_I2C_WATCHDOG)
             {
                 if (!first)
-                {
-                    *p++ = ',';
-                    *p++ = ' ';
-                }
-                strcpy(p, "I2CWatchdog");
-                p += 11;
+                    writer.append_str(", ");
+                writer.append_str("I2CWatchdog");
                 first = false;
             }
             if (flags & SensorState::ERR_DESYNC)
             {
                 if (!first)
-                {
-                    *p++ = ',';
-                    *p++ = ' ';
-                }
-                strcpy(p, "Desync");
-                p += 6;
+                    writer.append_str(", ");
+                writer.append_str("Desync");
                 first = false;
             }
             if (flags & SensorState::ERR_RECOVERY_DESYNC)
             {
                 if (!first)
-                {
-                    *p++ = ',';
-                    *p++ = ' ';
-                }
-                strcpy(p, "RecDesync");
-                p += 9;
+                    writer.append_str(", ");
+                writer.append_str("RecDesync");
                 first = false;
             }
-            strcpy(p, ")\r\n");
+            writer.append_str(")\r\n");
         }
-        cdc_print(buf);
+        cdc_print(writer.c_str());
     }
 
     void cmd_status()
@@ -368,76 +404,20 @@ namespace
             return;
         }
 
-        char buf[128];
-        char *p;
-
         cdc_print("=== LIVE STATUS ===\r\n");
 
-        p = buf;
-        strcpy(p, "Position: ");
-        p += 10;
-        p = int_to_str(g_state->sensor.wheel_position.load(), p);
-        strcpy(p, "\r\n");
-        cdc_print(buf);
-
-        int32_t vel_cps = g_state->sensor.wheel_velocity.load();
-        p = buf;
-        strcpy(p, "Velocity (cps): ");
-        p += 16;
-        p = int_to_str(vel_cps, p);
-        strcpy(p, "\r\n");
-        cdc_print(buf);
-
-        p = buf;
-        strcpy(p, "Buttons: 0x");
-        p += 11;
-        uint16_t btns = g_state->buttons.load();
-        const char hex[] = "0123456789ABCDEF";
-        *p++ = hex[(btns >> 12) & 0xF];
-        *p++ = hex[(btns >> 8) & 0xF];
-        *p++ = hex[(btns >> 4) & 0xF];
-        *p++ = hex[btns & 0xF];
-        strcpy(p, "\r\n");
-        cdc_print(buf);
-
-        p = buf;
-        strcpy(p, "Accel: ");
-        p += 7;
-        p = int_to_str(g_state->pedal_accel.load(), p);
-        strcpy(p, "\r\n");
-        cdc_print(buf);
-
-        p = buf;
-        strcpy(p, "Brake: ");
-        p += 7;
-        p = int_to_str(g_state->pedal_brake.load(), p);
-        strcpy(p, "\r\n");
-        cdc_print(buf);
+        cdc_print_line("Position: ", g_state->sensor.wheel_position.load());
+        cdc_print_line("Velocity (cps): ", g_state->sensor.wheel_velocity.load());
+        cdc_print_line("Accel: ", g_state->pedal_accel.load());
+        cdc_print_line("Brake: ", g_state->pedal_brake.load());
 
         uint8_t flags = g_state->sensor.error_flags.load();
         print_error_flags(flags);
 
-        p = buf;
-        strcpy(p, "LED status: ");
-        p += 12;
-        p = uint_to_str(static_cast<uint8_t>(g_state->led_status.get()), p);
-        strcpy(p, "\r\n");
-        cdc_print(buf);
+        cdc_print_line("LED status: ", static_cast<uint8_t>(g_state->led_status.get()));
 
         uint8_t err_count = (g_error_log_write_idx - g_error_log_read_idx + ERROR_LOG_SIZE) % ERROR_LOG_SIZE;
-        p = buf;
-        strcpy(p, "Logged errors: ");
-        p += 15;
-        p = uint_to_str(err_count, p);
-        strcpy(p, "\r\n");
-        cdc_print(buf);
-
-        p = buf;
-        strcpy(p, "Loop time (EMA): ");
-        p += 17;
-        p = uint_to_str(g_state->loop_time_avg_us.load(), p);
-        strcpy(p, " us\r\n");
-        cdc_print(buf);
+        cdc_print_line("Logged errors: ", err_count);
 
         // Request AGC register read from Core 1
         g_state->request_agc_read.store(true);
@@ -455,12 +435,20 @@ namespace
             tud_task(); // Keep USB alive while waiting
         }
 
-        p = buf;
-        strcpy(p, "AGC: ");
-        p += 5;
-        p = uint_to_str(g_state->sensor.agc_value.load(), p);
-        strcpy(p, "\r\n");
-        cdc_print(buf);
+        cdc_print_line("AGC: ", g_state->sensor.agc_value.load());
+
+        SafeBufferWriter<> writer;
+
+        writer.append_str("Buttons: 0x");
+        writer.append_hex16(g_state->buttons.load());
+        writer.append_str("\r\n");
+        cdc_print(writer.c_str());
+
+        writer.reset();
+        writer.append_str("Loop time (EMA): ");
+        writer.append_uint(g_state->loop_time_avg_us.load());
+        writer.append_str(" us\r\n");
+        cdc_print(writer.c_str());
     }
 
     // =========================================================================
@@ -505,26 +493,21 @@ namespace
 
         cdc_print("=== ERROR LOG ===\r\n");
 
-        char buf[64];
-        char *p;
         int count = 0;
+        SafeBufferWriter<> writer;
 
         while (read_idx != write_idx && count < ERROR_LOG_SIZE)
         {
             ErrorLogEntry &e = g_error_log[read_idx];
-            p = buf;
-            *p++ = '[';
-            p = uint_to_str(static_cast<uint32_t>(e.timestamp_us / 1000), p); // uint to avoid sign wrap after 24d
-            strcpy(p, "ms | Code ");
-            p += 10;
-            p = uint_to_str(static_cast<uint8_t>(e.error_code), p);
-            strcpy(p, " (");
-            p += 2;
-            strcpy(p, error_name(e.error_code));
-            p += strlen(error_name(e.error_code));
-            strcpy(p, ")\r\n");
-            p += 3;
-            cdc_print(buf);
+            writer.reset();
+            writer.append_str("[");
+            writer.append_uint(static_cast<uint32_t>(e.timestamp_us / 1000));
+            writer.append_str("ms | Code ");
+            writer.append_uint(static_cast<uint8_t>(e.error_code));
+            writer.append_str(" (");
+            writer.append_str(error_name(e.error_code));
+            writer.append_str(")\r\n");
+            cdc_print(writer.c_str());
 
             read_idx = (read_idx + 1) % ERROR_LOG_SIZE;
             count++;
@@ -533,36 +516,225 @@ namespace
         // Clear the log
         g_error_log_read_idx = write_idx;
 
-        p = buf;
-        strcpy(p, "Total: ");
-        p += 7;
-        p = int_to_str(count, p);
-        strcpy(p, " entries (cleared)\r\n");
-        cdc_print(buf);
+        writer.reset();
+        writer.append_str("Total: ");
+        writer.append_int(count);
+        writer.append_str(" entries (cleared)\r\n");
+        cdc_print(writer.c_str());
     }
 
     // =========================================================================
     // Command Parser
     // =========================================================================
 
+    // =========================================================================
+    // Command Parser Settings Registries & Setters
+    // =========================================================================
+
+    void set_amin(int32_t val) { g_state->cal_state.accel_min.store(val); g_pedals->apply_calibration(g_state->cal_state); }
+    int32_t get_amin() { return g_state->cal_state.accel_min.load(); }
+
+    void set_amax(int32_t val) { g_state->cal_state.accel_max.store(val); g_pedals->apply_calibration(g_state->cal_state); }
+    int32_t get_amax() { return g_state->cal_state.accel_max.load(); }
+
+    void set_bmin(int32_t val) { g_state->cal_state.brake_min.store(val); g_pedals->apply_calibration(g_state->cal_state); }
+    int32_t get_bmin() { return g_state->cal_state.brake_min.load(); }
+
+    void set_bmax(int32_t val) { g_state->cal_state.brake_max.store(val); g_pedals->apply_calibration(g_state->cal_state); }
+    int32_t get_bmax() { return g_state->cal_state.brake_max.load(); }
+
+    void set_cwz(int32_t val) { g_state->cal_state.cw_zero_pwm.store(static_cast<uint16_t>(val)); g_state->calibration_reload.store(true); }
+    int32_t get_cwz() { return g_state->cal_state.cw_zero_pwm.load(); }
+
+    void set_ccz(int32_t val) { g_state->cal_state.ccw_zero_pwm.store(static_cast<uint16_t>(val)); g_state->calibration_reload.store(true); }
+    int32_t get_ccz() { return g_state->cal_state.ccw_zero_pwm.load(); }
+
+    void set_center(int32_t val) { g_state->cal_state.center_offset.store(val); g_state->calibration_reload.store(true); }
+    int32_t get_center() { return g_state->cal_state.center_offset.load(); }
+
+    void set_angle(int32_t val) {
+        g_state->cal_state.wheel_angle_deg.store(val);
+        int32_t half_deg = val / 2;
+        int32_t max_half_angle_counts = (half_deg * WHEEL_COUNTS_PER_REV) / 360;
+        g_state->cal_state.max_half_angle_counts.store(max_half_angle_counts);
+        g_state->calibration_reload.store(true);
+    }
+    int32_t get_angle() { return g_state->cal_state.wheel_angle_deg.load(); }
+
+    void set_damper(int32_t val) { g_state->cal_state.system_damper_strength.store(val); g_state->calibration_reload.store(true); }
+    int32_t get_damper() { return g_state->cal_state.system_damper_strength.load(); }
+
+    void set_gain(int32_t val) { g_state->cal_state.force_gain_percent.store(val); g_state->calibration_reload.store(true); }
+    int32_t get_gain() { return g_state->cal_state.force_gain_percent.load(); }
+
+    void set_friction(int32_t val) { g_state->cal_state.friction_fade_force.store(val); g_state->calibration_reload.store(true); }
+    int32_t get_friction() { return g_state->cal_state.friction_fade_force.load(); }
+
+    // Registries structures
+    struct CommandDefinition
+    {
+        const char *name;
+        void (*handler)(int argc, char **argv);
+        const char *help_desc;
+        bool show_in_list;
+    };
+
+    struct SettingDefinition
+    {
+        const char *name;
+        const char *help_desc;
+        int32_t min_val;
+        int32_t max_val;
+        void (*set_fn)(int32_t val);
+        int32_t (*get_fn)();
+    };
+
+    // Forward declarations of handlers so they can be placed in COMMANDS table
+    void handle_status(int argc, char **argv) { cmd_status(); }
+    void handle_calibration(int argc, char **argv) { cmd_calibration(); }
+    void handle_errors(int argc, char **argv) { cmd_errors(); }
+    void handle_save(int argc, char **argv) { cmd_save_calibration(); }
+    void print_help();
+    void handle_help(int argc, char **argv) { print_help(); }
+    void cmd_cs(int argc, char **argv);
+    void handle_cs(int argc, char **argv) { cmd_cs(argc, argv); }
+
+    constexpr CommandDefinition COMMANDS[] = {
+        {"s",    handle_status,      "Print live status",                     true},
+        {"c",    handle_calibration, "Print live calibration data",           true},
+        {"e",    handle_errors,      "Print error log",                       true},
+        {"cw",   handle_save,        "Write live calibration data to flash",  true},
+        {"cs",   handle_cs,          "Configuration Settings",                false},
+        {"help", handle_help,        "Print this help",                       true}
+    };
+
+    constexpr SettingDefinition SETTINGS[] = {
+        {"amin",     "Set accelerator min",      0, 4095,  set_amin,     get_amin},
+        {"amax",     "Set accelerator max",      0, 4095,  set_amax,     get_amax},
+        {"bmin",     "Set brake min",            0, 4095,  set_bmin,     get_bmin},
+        {"bmax",     "Set brake max",            0, 4095,  set_bmax,     get_bmax},
+        {"cwz",      "Set CW zero PWM",          0, 6249,  set_cwz,      get_cwz},
+        {"ccz",      "Set CCW zero PWM",         0, 6249,  set_ccz,      get_ccz},
+        {"center",   "Set wheel center offset",  0, 4095,  set_center,   get_center},
+        {"angle",    "Set max wheel angle",      180, 1080,set_angle,    get_angle},
+        {"damper",   "Set system damper",        0, 10000, set_damper,   get_damper},
+        {"gain",     "Set force gain %",         0, 100,   set_gain,     get_gain},
+        {"friction", "Set friction fade force",  1, 9999,  set_friction, get_friction}
+    };
+
+    // Compile-time string builder helper
+    template <size_t N>
+    struct CompileTimeString
+    {
+        char data[N]{};
+        size_t length = 0;
+
+        constexpr void append(const char *str)
+        {
+            while (*str)
+            {
+                if (length < N - 1)
+                {
+                    data[length++] = *str;
+                }
+                str++;
+            }
+        }
+
+        constexpr void append_int(int32_t val)
+        {
+            if (val == 0)
+            {
+                if (length < N - 1) data[length++] = '0';
+                return;
+            }
+            if (val < 0)
+            {
+                if (length < N - 1) data[length++] = '-';
+                val = -val;
+            }
+            char buf[12]{};
+            int i = 0;
+            while (val > 0)
+            {
+                buf[i++] = '0' + (val % 10);
+                val /= 10;
+            }
+            for (int j = i - 1; j >= 0; j--)
+            {
+                if (length < N - 1) data[length++] = buf[j];
+            }
+        }
+
+        constexpr const char *c_str() const
+        {
+            return data;
+        }
+    };
+
+    constexpr size_t constexpr_strlen(const char *str)
+    {
+        size_t len = 0;
+        while (str[len]) len++;
+        return len;
+    }
+
+    template <size_t N>
+    constexpr CompileTimeString<N> generate_help_string()
+    {
+        CompileTimeString<N> s;
+        s.append("Commands:\r\n");
+
+        for (size_t i = 0; i < sizeof(COMMANDS) / sizeof(COMMANDS[0]); ++i)
+        {
+            if (!COMMANDS[i].show_in_list)
+                continue;
+            s.append("  ");
+            s.append(COMMANDS[i].name);
+            
+            size_t name_len = constexpr_strlen(COMMANDS[i].name);
+            size_t spaces = (name_len < 6) ? (6 - name_len) : 0;
+            for (size_t k = 0; k < spaces; ++k)
+            {
+                s.append(" ");
+            }
+            s.append("- ");
+            s.append(COMMANDS[i].help_desc);
+            s.append("\r\n");
+        }
+
+        s.append("  cs     - Configuration Settings:\r\n");
+        s.append("           cs <lut> <idx> <val> - Set LUT value (lut: cwl, ccl; idx: 0-4)\r\n");
+
+        for (size_t i = 0; i < sizeof(SETTINGS) / sizeof(SETTINGS[0]); ++i)
+        {
+            s.append("           cs ");
+            s.append(SETTINGS[i].name);
+            s.append(" <val> ");
+
+            size_t name_len = constexpr_strlen(SETTINGS[i].name);
+            size_t spaces = (name_len < 14) ? (14 - name_len) : 0;
+            for (size_t k = 0; k < spaces; ++k)
+            {
+                s.append(" ");
+            }
+            s.append("- ");
+            s.append(SETTINGS[i].help_desc);
+            s.append(" (");
+            s.append_int(SETTINGS[i].min_val);
+            s.append("-");
+            s.append_int(SETTINGS[i].max_val);
+            s.append(")\r\n");
+        }
+
+        return s;
+    }
+
+    constexpr auto HELP_STRING = generate_help_string<2048>();
+
     void print_help()
     {
-        cdc_print("Commands:\r\n");
-        cdc_print("  s   - Print live status\r\n");
-        cdc_print("  c   - Print live calibration data\r\n");
-        cdc_print("  e   - Print error log\r\n");
-        cdc_print("  cw  - Write live calibration data to flash\r\n");
-        cdc_print("  cs  - Configuration Settings:\r\n");
-        cdc_print("        cs <lut> <idx> <val> - Set LUT value (lut: cwl, ccl; idx: 0-4)\r\n");
-        cdc_print("        cs amin/amax <val>   - Set accelerator min/max\r\n");
-        cdc_print("        cs bmin/bmax <val>   - Set brake min/max\r\n");
-        cdc_print("        cs cwz/ccz <val>     - Set CW/CCW zero PWM (0-6249)\r\n");
-        cdc_print("        cs center <val>      - Set wheel center offset (0 - 4096)\r\n");
-        cdc_print("        cs angle <val>       - Set max wheel angle (>=180)\r\n");
-        cdc_print("        cs damper <val>      - Set system damper (0-10000)\r\n");
-        cdc_print("        cs gain <val>       - Set force gain %\r\n");
-        cdc_print("        cs friction <val>    - Set friction fade force (0-10000)\r\n");
-        cdc_print("  help - Print this help\r\n");
+        cdc_print(HELP_STRING.c_str());
     }
 
     void cmd_cs(int argc, char **argv)
@@ -573,7 +745,10 @@ namespace
             print_help();
             return;
         }
+
         const char *var = argv[1];
+
+        // 1. Handle special array/LUT variables requiring index (cwl, ccl)
         if (strcmp(var, "cwl") == 0 || strcmp(var, "ccl") == 0)
         {
             if (argc == 4)
@@ -587,7 +762,6 @@ namespace
                     else
                         g_state->cal_state.ccw_speed_lut[idx].store(val);
                     cdc_print("LUT updated.\r\n");
-                    // Signal Core 1 to re-apply the new calibration values
                     g_state->calibration_reload.store(true);
                 }
                 else
@@ -600,109 +774,34 @@ namespace
                 cdc_print("ERR: Usage: cs <lut> <idx> <val>\r\n");
                 print_help();
             }
+            return;
         }
-        else
+
+        // 2. Handle generic setting table variables
+        int32_t val = atoi(argv[2]);
+        for (size_t i = 0; i < sizeof(SETTINGS) / sizeof(SETTINGS[0]); ++i)
         {
-            int32_t val = atoi(argv[2]);
-            if (strcmp(var, "amin") == 0 || strcmp(var, "amax") == 0 ||
-                strcmp(var, "bmin") == 0 || strcmp(var, "bmax") == 0)
+            if (strcmp(var, SETTINGS[i].name) == 0)
             {
-
-                if (val < 0 || val > 4095)
+                if (val < SETTINGS[i].min_val || val > SETTINGS[i].max_val)
                 {
-                    cdc_print("ERR: Value must be 0 to 4095\r\n");
+                    SafeBufferWriter<> writer;
+                    writer.append_str("ERR: Value must be ");
+                    writer.append_int(SETTINGS[i].min_val);
+                    writer.append_str(" to ");
+                    writer.append_int(SETTINGS[i].max_val);
+                    writer.append_str("\r\n");
+                    cdc_print(writer.c_str());
                     return;
                 }
-
-                if (strcmp(var, "amin") == 0)
-                    g_state->cal_state.accel_min.store(val);
-                else if (strcmp(var, "amax") == 0)
-                    g_state->cal_state.accel_max.store(val);
-                else if (strcmp(var, "bmin") == 0)
-                    g_state->cal_state.brake_min.store(val);
-                else if (strcmp(var, "bmax") == 0)
-                    g_state->cal_state.brake_max.store(val);
-                g_pedals->apply_calibration(g_state->cal_state);
+                SETTINGS[i].set_fn(val);
+                cdc_print("Updated.\r\n");
+                return;
             }
-            else
-            {
-                if (strcmp(var, "cwz") == 0)
-                {
-                    if (val < 0 || val > PWM_WRAP)
-                    {
-                        cdc_print("ERR: maxpwm must be 0 to 6249\r\n");
-                        return;
-                    }
-                    g_state->cal_state.cw_zero_pwm.store(static_cast<uint16_t>(val));
-                }
-                else if (strcmp(var, "ccz") == 0)
-                {
-                    if (val < 0 || val > PWM_WRAP)
-                    {
-                        cdc_print("ERR: maxpwm must be 0 to 6249\r\n");
-                        return;
-                    }
-                    g_state->cal_state.ccw_zero_pwm.store(static_cast<uint16_t>(val));
-                }
-                else if (strcmp(var, "center") == 0)
-                {
-                    if (val < 0 || val > 4095)
-                    {
-                        cdc_print("ERR: Value must be 0 to 4095\r\n");
-                        return;
-                    }
-                    g_state->cal_state.center_offset.store(val);
-                }
-                else if (strcmp(var, "angle") == 0)
-                {
-                    if (val < 180)
-                    {
-                        cdc_print("ERR: angle must be >= 180 degrees\r\n");
-                        return;
-                    }
-                    g_state->cal_state.wheel_angle_deg.store(val);
-                    int32_t half_deg = val / 2;
-                    int32_t max_half_angle_counts = (half_deg * WHEEL_COUNTS_PER_REV) / 360;
-                    g_state->cal_state.max_half_angle_counts.store(max_half_angle_counts);
-                }
-                else if (strcmp(var, "damper") == 0)
-                {
-                    if (val < 0 || val > 10000)
-                    {
-                        cdc_print("ERR: damper must be 0 to 10000\r\n");
-                        return;
-                    }
-                    g_state->cal_state.system_damper_strength.store(val);
-                }
-                else if (strcmp(var, "gain") == 0)
-                {
-                    if (val < 0)
-                    {
-                        cdc_print("ERR: gain must be >= 0\r\n");
-                        return;
-                    }
-                    g_state->cal_state.force_gain_percent.store(val);
-                }
-                else if (strcmp(var, "friction") == 0)
-                {
-                    if (val < 1 || val > 9999)
-                    {
-                        cdc_print("ERR: friction must be 1 to 9999\r\n");
-                        return;
-                    }
-                    g_state->cal_state.friction_fade_force.store(val);
-                }
-                else
-                {
-                    cdc_print("ERR: Unknown variable\r\n");
-                    print_help();
-                    return;
-                }
-                // Signal Core 1 to re-apply the new calibration values
-                g_state->calibration_reload.store(true);
-            }
-            cdc_print("Updated.\r\n");
         }
+
+        cdc_print("ERR: Unknown variable\r\n");
+        print_help();
     }
 
     void process_command(char *cmd)
@@ -731,35 +830,17 @@ namespace
         if (argc == 0)
             return;
 
-        if (strcmp(argv[0], "s") == 0)
+        for (size_t i = 0; i < sizeof(COMMANDS) / sizeof(COMMANDS[0]); ++i)
         {
-            cmd_status();
+            if (strcmp(argv[0], COMMANDS[i].name) == 0)
+            {
+                COMMANDS[i].handler(argc, argv);
+                return;
+            }
         }
-        else if (strcmp(argv[0], "c") == 0)
-        {
-            cmd_calibration();
-        }
-        else if (strcmp(argv[0], "e") == 0)
-        {
-            cmd_errors();
-        }
-        else if (strcmp(argv[0], "help") == 0)
-        {
-            print_help();
-        }
-        else if (strcmp(argv[0], "cw") == 0)
-        {
-            cmd_save_calibration();
-        }
-        else if (strcmp(argv[0], "cs") == 0)
-        {
-            cmd_cs(argc, argv);
-        }
-        else
-        {
-            cdc_print("ERR: Unknown command.\r\n");
-            print_help();
-        }
+
+        cdc_print("ERR: Unknown command.\r\n");
+        print_help();
     }
 
 }
@@ -828,86 +909,94 @@ void debug_serial_update()
         }
     }
 
-    if (!tud_cdc_available())
-        return;
-
-    char c = (char)tud_cdc_read_char();
-
-    if (g_escape_state == 1)
+    while (tud_cdc_available() > 0)
     {
-        if (c == '[')
-            g_escape_state = 2;
-        else
-            g_escape_state = 0;
-        return;
-    }
-    else if (g_escape_state == 2)
-    {
-        if (c == 'A')
-        { // Arrow Up
-            // Clear current line
-            while (g_line_len > 0)
-            {
-                cdc_print("\b \b");
-                g_line_len--;
+        char c = (char)tud_cdc_read_char();
+
+        if (g_escape_state == 1)
+        {
+            if (c == '[')
+                g_escape_state = 2;
+            else
+                g_escape_state = 0;
+            continue;
+        }
+        else if (g_escape_state == 2)
+        {
+            if (c == 'A')
+            { // Arrow Up
+                // Batch backspaces to clear the current line
+                if (g_line_len > 0)
+                {
+                    char clear_buf[193];
+                    size_t idx = 0;
+                    for (uint8_t i = 0; i < g_line_len; i++)
+                    {
+                        clear_buf[idx++] = '\b';
+                        clear_buf[idx++] = ' ';
+                        clear_buf[idx++] = '\b';
+                    }
+                    clear_buf[idx] = '\0';
+                    cdc_print(clear_buf);
+                }
+                // Copy last command safely
+                memcpy(g_line_buf, g_last_cmd_buf, g_last_cmd_len);
+                g_line_len = g_last_cmd_len;
+                g_line_buf[g_line_len] = '\0';
+                cdc_print(g_line_buf);
             }
-            // Copy last command
-            strcpy(g_line_buf, g_last_cmd_buf);
-            g_line_len = g_last_cmd_len;
-            g_line_buf[g_line_len] = '\0';
-            cdc_print(g_line_buf);
+            g_escape_state = 0;
+            continue;
         }
-        g_escape_state = 0;
-        return;
-    }
-    else if (c == 0x1B)
-    { // ESC
-        g_escape_state = 1;
-        return;
-    }
+        else if (c == 0x1B)
+        { // ESC
+            g_escape_state = 1;
+            continue;
+        }
 
-    if (c == '\r' || c == '\n')
-    {
-        cdc_print("\r\n");
-        g_line_buf[g_line_len] = '\0';
-        if (g_line_len > 0)
+        if (c == '\r' || c == '\n')
         {
-            strcpy(g_last_cmd_buf, g_line_buf);
-            g_last_cmd_len = g_line_len;
-            process_command(g_line_buf);
+            cdc_print("\r\n");
+            g_line_buf[g_line_len] = '\0';
+            if (g_line_len > 0)
+            {
+                memcpy(g_last_cmd_buf, g_line_buf, g_line_len);
+                g_last_cmd_len = g_line_len;
+                g_last_cmd_buf[g_last_cmd_len] = '\0';
+                process_command(g_line_buf);
+                g_line_len = 0;
+            }
+            if (g_prompt_printed)
+            {
+                cdc_print("ffbserial: ");
+            }
+        }
+        else if (c == 0x03)
+        { // Ctrl-C
             g_line_len = 0;
+            cdc_print("^C\r\n");
+            if (g_prompt_printed)
+            {
+                cdc_print("ffbserial: ");
+            }
         }
-        if (g_prompt_printed)
-        {
-            cdc_print("ffbserial: ");
+        else if (c == '\b' || c == 0x7F)
+        { // Backspace or DEL
+            if (g_line_len > 0)
+            {
+                g_line_len--;
+                cdc_print("\b \b");
+            }
         }
-    }
-    else if (c == 0x03)
-    { // Ctrl-C
-        g_line_len = 0;
-        cdc_print("^C\r\n");
-        if (g_prompt_printed)
+        else if (g_line_len < sizeof(g_line_buf) - 1)
         {
-            cdc_print("ffbserial: ");
-        }
-    }
-    else if (c == '\b' || c == 0x7F)
-    { // Backspace or DEL
-        if (g_line_len > 0)
-        {
-            g_line_len--;
-            cdc_print("\b \b");
-        }
-    }
-    else if (g_line_len < sizeof(g_line_buf) - 1)
-    {
-        // Allow alphanumeric, space, minus
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-            (c >= '0' && c <= '9') || c == ' ' || c == '-')
-        {
-            g_line_buf[g_line_len++] = c;
-            char echo[2] = {c, '\0'};
-            cdc_print(echo);
+            // Allow alphanumeric, space, minus
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9') || c == ' ' || c == '-')
+            {
+                g_line_buf[g_line_len++] = c;
+                cdc_print_char(c);
+            }
         }
     }
 }
