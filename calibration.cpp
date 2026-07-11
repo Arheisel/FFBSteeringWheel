@@ -39,6 +39,7 @@ namespace {
                     context.i2c.reset_bus();
                     return block_read_sensor(context, retries + 1);
                 } else {
+                    context.motor.stop();
                     context.led_state.set(SystemStatus::I2CWatchdogFired);
                     while (true) {
                         context.led.sleep_ms(10);
